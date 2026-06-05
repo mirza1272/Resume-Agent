@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { generateEmail } from '../../lib/emailTemplates'
+import AuthButton from '../../components/AuthButton'
 
 // Simple helpers to extract job title and company name from the raw job description text
 function extractJobTitle(text) {
@@ -861,19 +862,22 @@ Rules:
           <span style={{ fontWeight: 600, fontSize: 15 }}>Resume Agent</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="ats-label" style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace' }}>ATS</span>
-          <div style={{
-            padding: '4px 12px',
-            borderRadius: 20,
-            background: getScoreColor(score),
-            color: '#fff',
-            fontWeight: 700,
-            fontSize: 14,
-            fontFamily: 'DM Mono, monospace',
-          }}>
-            {score}/100
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="ats-label" style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace' }}>ATS</span>
+            <div style={{
+              padding: '4px 12px',
+              borderRadius: 20,
+              background: getScoreColor(score),
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 14,
+              fontFamily: 'DM Mono, monospace',
+            }}>
+              {score}/100
+            </div>
           </div>
+          <AuthButton />
         </div>
       </header>
 

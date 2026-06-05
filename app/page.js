@@ -4,6 +4,7 @@ import { generateEmail } from '../lib/emailTemplates'
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { calculateATS, extractMatchedSkills } from '../utils/ats'
+import AuthButton from '../components/AuthButton'
 
 export default function Home() {
   const router = useRouter()
@@ -296,11 +297,14 @@ Rules:
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
-      <header style={{ borderBottom: '1px solid var(--border)', padding: '20px 40px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <div style={{ width: 28, height: 28, background: 'var(--accent)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>R</span>
+      <header style={{ borderBottom: '1px solid var(--border)', padding: '20px 40px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: 28, height: 28, background: 'var(--accent)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: '#fff', fontSize: 14, fontWeight: 700 }}>R</span>
+          </div>
+          <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>Resume Agent</span>
         </div>
-        <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>Resume Agent</span>
+        <AuthButton />
       </header>
 
       <main style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px' }}>
