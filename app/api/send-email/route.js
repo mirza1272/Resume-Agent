@@ -1,15 +1,21 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
 
+// Ensure this API route is always treated as dynamic to avoid static optimization in production
+export const runtime = 'nodejs'
+
+
 export async function POST(req) {
   try {
     const { to, emailContent, resumeData, userName, customPDF } = await req.json()
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
+      // Provide a clearer error for production logs
+      console.error('Missing GMAIL_USER or GMAIL_PASS environment variables')
       return NextResponse.json({
         success: false,
-        error: 'Email not configured. Add GMAIL_USER and GMAIL_PASS to .env'
-      }, { status: 400 })
+        error: 'Email service not configured. Ensure GMAIL_USER and GMAIL_PASS are set in environment variables.'
+      }, { status: 500 })
     }
 
     const transporter = nodemailer.createTransport({
