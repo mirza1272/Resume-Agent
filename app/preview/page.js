@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
+import { generateEmail } from '../../lib/emailTemplates'
 
 // Simple helpers to extract job title and company name from the raw job description text
 function extractJobTitle(text) {
@@ -26,6 +27,212 @@ function extractKeyRequirements(text) {
 }
 
 const ResumePDFViewer = dynamic(() => import('../../components/ResumePDFViewer'), { ssr: false })
+
+/**
+ * Mobile-only component: renders resume data as clean inline HTML.
+ * No downloads — just a scrollable, nicely formatted resume card.
+ * Hidden on desktop via CSS `.mobile-pdf-note`.
+ */
+function MobileResumeView({ resumeData: r }) {
+  if (!r) return null
+  const sec = (label) => (
+    <div style={{ marginTop: 18 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>
+        {label}
+      </div>
+    </div>
+  )
+  return (
+    <div className="mobile-pdf-note" style={{
+      display: 'none', flexDirection: 'column',
+      background: '#fff', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '24px 18px', marginBottom: 16,
+      fontFamily: 'DM Sans, sans-serif', color: '#2d3748', lineHeight: 1.55
+    }}>
+      {/* Header */}
+      <div style={{ textAlign: 'center', paddingBottom: 14, borderBottom: '1.5px solid #e2e8f0' }}>
+        <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: '#1a202c' }}>{r.name}</h2>
+        {r.title && <p style={{ margin: '0 0 6px', fontSize: 13, color: '#718096' }}>{r.title}</p>}
+        <p style={{ margin: 0, fontSize: 11, color: '#718096' }}>
+          {[r.email, r.phone, r.location].filter(Boolean).join('  ·  ')}
+        </p>
+        {(r.linkedin || r.github || r.portfolio) && (
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: '#718096' }}>
+            {[r.linkedin, r.github, r.portfolio].filter(Boolean).join('  ·  ')}
+          </p>
+        )}
+      </div>
+
+      {/* Summary */}
+      {r.summary && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 8 }}>Summary</div>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#4a5568' }}>{r.summary}</p>
+        </div>
+      )}
+
+      {/* Skills */}
+      {(r.skills || []).length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 8 }}>Skills</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(r.skills || []).map((s, i) => (
+              <span key={i} style={{ padding: '3px 10px', background: '#edf2f7', borderRadius: 12, fontSize: 11, color: '#2d3748', fontWeight: 500 }}>{s}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Experience */}
+      {(r.experience || []).length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Experience</div>
+          {(r.experience || []).map((exp, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
+                <span style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{exp.title}</span>
+                <span style={{ fontSize: 11, color: '#718096' }}>{exp.dates}</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#4a5568', marginBottom: 6 }}>{exp.company}{exp.location ? ` · ${exp.location}` : ''}</div>
+              {(exp.bullets || []).map((b, bi) => (
+                <div key={bi} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
+                  <span style={{ color: '#718096', flexShrink: 0 }}>•</span>
+                  <span style={{ fontSize: 12, color: '#4a5568', lineHeight: 1.5 }}>{b}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Projects */}
+      {(r.projects || []).length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Projects</div>
+          {(r.projects || []).map((proj, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <span style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{proj.title}</span>
+              {proj.subtitle && <span style={{ fontSize: 11, color: '#718096' }}> · {proj.subtitle}</span>}
+              <div style={{ marginTop: 4 }}>
+                {(proj.bullets || []).map((b, bi) => (
+                  <div key={bi} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
+                    <span style={{ color: '#718096', flexShrink: 0 }}>•</span>
+                    <span style={{ fontSize: 12, color: '#4a5568', lineHeight: 1.5 }}>{b}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Education */}
+      {(r.education || []).length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Education</div>
+          {(r.education || []).map((edu, i) => (
+            <div key={i} style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{edu.degree}</div>
+              <div style={{ fontSize: 12, color: '#4a5568' }}>{edu.school}{edu.year ? ` · ${edu.year}` : ''}{edu.location ? ` · ${edu.location}` : ''}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Mobile-only: renders raw extracted resume text as a clean formatted card.
+ * Uses smart regex to split single-line blobs into sections and bullets.
+ */
+function MobileCustomResumeView({ text }) {
+  if (!text) return null
+
+  // 1. Clean up bullets (avoid breaking dates with hyphens, only match standard bullets)
+  let formatted = text.replace(/([•*▪➤])\s+/g, '\n$1 ')
+
+  // 2. Inject newlines before known section headers (case-insensitive)
+  const knownSections = [
+    'Summary', 'Profile', 'Employment History', 'Experience', 'Work Experience',
+    'Education', 'Skills', 'Technical Skills', 'Projects', 'Certifications', 'Languages'
+  ]
+  const sectionRe = new RegExp(`^\\s*(${knownSections.join('|')})\\s*$`, 'gim')
+  formatted = formatted.replace(sectionRe, '\n\n$1\n')
+
+  const lines = formatted.split('\n').map(l => l.trim()).filter(Boolean)
+
+  const sections = []
+  let current = { heading: '__HEADER__', lines: [] }
+  sections.push(current)
+
+  for (const line of lines) {
+    const isHeader = knownSections.some(s => line.toLowerCase() === s.toLowerCase())
+    if (isHeader) {
+      current = { heading: line.toUpperCase(), lines: [] }
+      sections.push(current)
+    } else {
+      current.lines.push(line)
+    }
+  }
+
+  // Remove empty header section if any
+  const finalSections = sections.filter(s => s.heading !== '__HEADER__' || s.lines.length > 0)
+
+  return (
+    <div className="mobile-pdf-note" style={{
+      display: 'none', flexDirection: 'column',
+      background: '#fff', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '20px 16px', marginBottom: 16,
+      fontFamily: 'DM Sans, sans-serif', color: '#2d3748', lineHeight: 1.55,
+      wordBreak: 'break-word'
+    }}>
+      {finalSections.map((sec, si) => (
+        <div key={si} style={{ marginBottom: 14 }}>
+          {sec.heading === '__HEADER__' ? (
+            <div style={{ textAlign: 'center', paddingBottom: 14, borderBottom: '1.5px solid #e2e8f0', marginBottom: 14 }}>
+              {sec.lines.map((l, li) => (
+                <p key={li} style={{
+                  margin: '2px 0',
+                  fontSize: li === 0 ? 18 : 12,
+                  fontWeight: li === 0 ? 700 : 400,
+                  color: li === 0 ? '#1a202c' : '#718096'
+                }}>{l}</p>
+              ))}
+            </div>
+          ) : (
+            <>
+              <div style={{
+                fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+                textTransform: 'uppercase', color: '#4a5568',
+                borderBottom: '1.5px solid #cbd5e0', paddingBottom: 3, marginBottom: 8,
+                marginTop: si > 0 ? 8 : 0
+              }}>{sec.heading}</div>
+              {sec.lines.map((l, li) => {
+                const isBullet = /^[-•*▪➤]/.test(l)
+                // Heuristic for sub-headings (e.g. job titles / dates)
+                const isSubHead = l.length < 80 && !isBullet && !l.endsWith('.') && li === 0
+                return (
+                  <div key={li} style={{ display: 'flex', gap: isBullet ? 6 : 0, marginBottom: isSubHead ? 4 : 3 }}>
+                    {isBullet && <span style={{ color: '#718096', flexShrink: 0 }}>•</span>}
+                    <span style={{
+                      fontSize: isSubHead ? 13 : 12,
+                      fontWeight: isSubHead ? 600 : 400,
+                      color: isSubHead ? '#1a202c' : '#4a5568',
+                      lineHeight: 1.5
+                    }}>
+                      {isBullet ? l.replace(/^[-•*▪➤]\s*/, '') : l}
+                    </span>
+                  </div>
+                )
+              })}
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 export default function PreviewPage() {
   const router = useRouter()
@@ -55,6 +262,7 @@ export default function PreviewPage() {
   const [uploading, setUploading] = useState(false)
   const [customAtsAnalysis, setCustomAtsAnalysis] = useState(null)
   const [uploadFileName, setUploadFileName] = useState('')
+  const [customResumeText, setCustomResumeText] = useState('')
 
   // Memoize the heavy PDF rendering to prevent lag on keystroke changes
   const pdfViewerEl = useMemo(() => {
@@ -179,26 +387,6 @@ Respond ONLY with a valid JSON object in this exact format:
       }
     ]
   },
-  "email": {
-    "subject": "<Concise subject line targeting the role, e.g. 'Application for Software Engineer Internship' or 'Application for Junior AI Engineer Role' - MAX 60 characters>",
-    "body": "<Professional formal cover email that MUST strictly follow this layout and writing rules:
-    
-    Dear Hiring Team, (or 'Dear Hiring Manager,', or 'Dear Recruitment Team,')
-    
-    I am writing to apply for the [Tailored Position Name] position. [Brief introduction mentioning target role and background]
-    
-    [Brief paragraph explaining why the candidate is a strong fit, highlighting 1-2 key skills or experiences from the tailored resume. Keep it extremely natural, concise, and human-written. Do not use AI-like exaggeration phrases such as 'excited to apply' or 'perfect fit'.]
-    
-    Thank you for your time and consideration.
-    
-    Best Regards,
-    Haseeb ur Rahman
-    +92 303 8607925
-    Portfolio: https://mirzahaseeb.me/
-    GitHub: https://github.com/mirza1272/
-    
-    Ensure the email body is between 80 to 180 words total. Use simple, natural human language. No robotic fillers or placeholder brackets.>"
-  },
   "skillMatch": {
     "matched": ["<skills from template that match job keywords>"],
     "missing": ["<key skills requested in job description that are NOT in candidate's skills list>"]
@@ -244,6 +432,10 @@ Rules:
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
       const extractedEmails = jobDesc.match(emailRegex)
       parsed.recipientEmail = extractedEmails && extractedEmails.length > 0 ? extractedEmails[0] : ''
+
+      // ── Deterministic email engine (overrides any AI-generated email) ──
+      parsed.email = generateEmail(jobDesc)
+
 
       // 3. Update state
       setData(parsed)
@@ -440,11 +632,38 @@ Rules:
     const loadingTask = pdfjsLib.getDocument(dataUrl)
     const pdf = await loadingTask.promise
     let text = ''
+
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i)
       const content = await page.getTextContent()
-      const strings = content.items.map(item => item.str)
-      text += strings.join(' ') + '\n'
+
+      // Sort items top-to-bottom, left-to-right to accurately reconstruct lines
+      const items = content.items.filter(item => item.str?.trim() || item.str === ' ')
+      items.sort((a, b) => {
+        const yDiff = b.transform[5] - a.transform[5] // PDF Y is bottom-up, so sort descending
+        if (Math.abs(yDiff) > 4) return yDiff
+        return a.transform[4] - b.transform[4] // X ascending
+      })
+
+      let lastY = -1
+      const textItems = []
+
+      for (const item of items) {
+        const currentY = item.transform[5]
+        // Start a new line if Y changes significantly
+        if (lastY !== -1 && Math.abs(currentY - lastY) > 4) {
+          textItems.push('\n')
+        } else if (lastY !== -1 && textItems.length > 0 && textItems[textItems.length - 1] !== '\n') {
+          // Add space if items are on the same line but separated horizontally
+          const lastStr = textItems[textItems.length - 1]
+          if (!lastStr.endsWith(' ') && !item.str.startsWith(' ')) {
+            textItems.push(' ')
+          }
+        }
+        textItems.push(item.str)
+        lastY = currentY
+      }
+      text += textItems.join('') + '\n\n'
     }
     return text
   }
@@ -482,6 +701,7 @@ Rules:
     setCustomPDF(null)
     setCustomAtsAnalysis(null)
     setUploadFileName('')
+    setCustomResumeText('')
     if (fileRef.current) fileRef.current.value = ''
 
     // Restore original tailored data from sessionStorage
@@ -531,12 +751,14 @@ Rules:
         throw new Error('Could not extract text from file.')
       }
 
+      // Save for mobile inline preview
+      setCustomResumeText(extractedText)
+
       if (typeof window === 'undefined' || !window.puter) {
         throw new Error('Puter AI script is loading. Please wait a moment and try again.')
       }
 
-      const prompt = `You are an expert ATS (Applicant Tracking System) reviewer and AI career coach.
-Analyze the following custom uploaded resume text against the target job description.
+      const prompt = `You are a strict ATS (Applicant Tracking System) evaluator. Your job is to give HONEST, ACCURATE scores — not to flatter the candidate.
 
 CUSTOM RESUME TEXT:
 ${extractedText}
@@ -546,22 +768,29 @@ ${jobDesc}
 
 Respond ONLY with a valid JSON object in this exact format:
 {
-  "atsScore": <number 0-100 evaluating how well this custom resume aligns with the job description>,
-  "summary": "<2-3 sentence professional analysis of this resume's alignment with the job>",
+  "atsScore": <number 0-100. Use this STRICT rubric:
+    - Count specifically how many required tech skills, tools, languages, and frameworks from the job description are present in the resume
+    - 90-100: 90%+ of required tech skills present + directly matching role experience
+    - 75-89: 70-89% of required skills present, relevant experience
+    - 60-74: 50-69% of required skills present, partially relevant
+    - 40-59: 30-49% of skills present, indirect match
+    - Below 40: Less than 30% of required skills present
+    Do NOT give high scores based on enthusiasm or soft skills. Be strict and honest.>,
+  "summary": "<2-3 sentence honest assessment of alignment with this specific job — mention specific gaps if any>",
   "strengths": [
-    "<strength bullet 1>",
-    "<strength bullet 2>"
+    "<specific technical strength that directly matches a job requirement — name the exact technology>",
+    "<another specific matching technical strength>"
   ],
   "missingSkills": [
-    "<key technologies or skills required in the job description that are missing from this custom resume>"
+    "<ONLY named technologies, tools, or languages from the job description that are NOT in the resume. Must be a specific tech name, NOT a vague phrase like 'production experience'. If nothing missing, return empty array.>"
   ],
   "matchedSkills": [
-    "<technologies or skills from the custom resume that match the job description, max 10>"
+    "<ONLY specific technologies, frameworks, languages, or tools from the job description that are present in the resume. Max 10 items. No soft skills or generic terms.>"
   ]
 }
 
 Rules:
-1. Provide an honest, accurate ATS score based on keyword match, experience relevance, and skills match.
+1. Be honest and strict with the ATS score — inflate nothing.
 2. Output ONLY valid JSON.`
 
       const response = await window.puter.ai.chat(prompt)
@@ -623,8 +852,8 @@ Rules:
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
-      <header style={{ borderBottom: '1px solid var(--border)', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <header className="preview-header" style={{ borderBottom: '1px solid var(--border)', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mid)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
             ← Back
           </button>
@@ -632,25 +861,23 @@ Rules:
           <span style={{ fontWeight: 600, fontSize: 15 }}>Resume Agent</span>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace' }}>ATS MATCH SCORE</span>
-            <div style={{
-              padding: '4px 12px',
-              borderRadius: 20,
-              background: getScoreColor(score),
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 14,
-              fontFamily: 'DM Mono, monospace',
-            }}>
-              {score}/100
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="ats-label" style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace' }}>ATS</span>
+          <div style={{
+            padding: '4px 12px',
+            borderRadius: 20,
+            background: getScoreColor(score),
+            color: '#fff',
+            fontWeight: 700,
+            fontSize: 14,
+            fontFamily: 'DM Mono, monospace',
+          }}>
+            {score}/100
           </div>
         </div>
       </header>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px', display: 'grid', gridTemplateColumns: '1fr 420px', gap: 28 }}>
+      <div className="preview-grid" style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', display: 'grid', gridTemplateColumns: '1fr 420px', gap: 28 }}>
         <div>
           <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
             {['resume', 'email'].map(tab => (
@@ -702,12 +929,24 @@ Rules:
               </div>
 
               {customPDF ? (
-                <iframe src={customPDF} style={{ width: '100%', height: 700, border: '1px solid var(--border)', borderRadius: 8 }} />
+                <>
+                  {/* Mobile: parse & render uploaded resume text inline */}
+                  <MobileCustomResumeView text={customResumeText} />
+                  <div className="desktop-pdf">
+                    <iframe src={customPDF} style={{ width: '100%', height: 700, border: '1px solid var(--border)', borderRadius: 8 }} />
+                  </div>
+                </>
               ) : (
-                <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-                  {pdfViewerEl}
-                </div>
+                <>
+                  {/* Mobile: render resume as clean inline HTML — no downloads */}
+                  <MobileResumeView resumeData={data?.resume} />
+                  <div className="desktop-pdf" style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+                    {pdfViewerEl}
+                  </div>
+                </>
               )}
+
+
             </div>
           )}
 
@@ -989,7 +1228,31 @@ Rules:
         </div>
       </div>
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 768px) {
+          .preview-grid {
+            grid-template-columns: 1fr !important;
+            padding: 16px 12px !important;
+          }
+          .preview-header {
+            padding: 10px 14px !important;
+          }
+          .ats-label {
+            display: none !important;
+          }
+          .mobile-pdf-note {
+            display: flex !important;
+          }
+          .desktop-pdf {
+            display: none !important;
+          }
+        }
+        @media (min-width: 769px) {
+          .mobile-pdf-note { display: none !important; }
+          .desktop-pdf { display: block !important; }
+        }
+      `}</style>
     </div>
   )
 }

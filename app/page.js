@@ -1,4 +1,5 @@
 'use client'
+import { generateEmail } from '../lib/emailTemplates'
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -184,7 +185,15 @@ ${targetText}
 
 Respond ONLY with a valid JSON object in this exact format:
 {
-  "atsScore": <number 0-100 based on keyword match, skills match, project relevance, and education relevance>,
+  "atsScore": <number 0-100. Use this STRICT rubric — do NOT inflate:
+    - Count how many SPECIFIC tech skills/tools from the job description are present in the resume
+    - 90-100: Resume covers 90%+ of required tech skills + direct role experience match
+    - 75-89: Covers 70-89% of required skills, mostly relevant experience
+    - 60-74: Covers 50-69% of skills, partial experience match
+    - 40-59: Covers 30-49% of skills, indirect relevance
+    - Below 40: Covers less than 30% of specific requirements
+    Be honest and strict. A student resume applying for a senior role should NOT score above 70.
+    Only hard skills, tools, frameworks, and languages count — NOT soft skills or general experience phrases.>,
   "resume": {
     "name": "${template.name}",
     "title": "${template.title || 'Software Engineer'}",
@@ -221,29 +230,9 @@ Respond ONLY with a valid JSON object in this exact format:
       }
     ]
   },
-  "email": {
-    "subject": "<Concise subject line targeting the role, e.g. 'Application for Software Engineer Internship' or 'Application for Junior AI Engineer Role' - MAX 60 characters>",
-    "body": "<Professional formal cover email that MUST strictly follow this layout and writing rules:
-    
-    Dear Hiring Team, (or 'Dear Hiring Manager,', or 'Dear Recruitment Team,')
-    
-    I am writing to apply for the [Tailored Position Name] position. [Brief introduction mentioning target role and background]
-    
-    [Brief paragraph explaining why the candidate is a strong fit, highlighting 1-2 key skills or experiences from the tailored resume. Keep it extremely natural, concise, and human-written. Do not use AI-like exaggeration phrases such as 'excited to apply' or 'perfect fit'.]
-    
-    Thank you for your time and consideration.
-    
-    Best Regards,
-    Haseeb ur Rahman
-    +92 303 8607925
-    Portfolio: https://mirzahaseeb.me/
-    GitHub: https://github.com/mirza1272/
-    
-    Ensure the email body is between 80 to 180 words total. Use simple, natural human language. No robotic fillers or placeholder brackets.>"
-  },
   "skillMatch": {
-    "matched": ["<skills from template that match job keywords>"],
-    "missing": ["<key skills requested in job description that are NOT in candidate's skills list>"]
+    "matched": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that exist in the resume. Do NOT include soft skills, experience levels, or generic words. Max 10 items.>"],
+    "missing": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that are NOT in the resume. Each item must be a named technology — NOT a vague phrase like 'production experience'. Max 6 items. If nothing is missing, return an empty array.>"]
   }
 }
 
@@ -270,6 +259,9 @@ Rules:
       }
 
       parsed.recipientEmail = extractedEmail
+
+      // ── Deterministic email engine (no AI generation) ──
+      parsed.email = generateEmail(targetText)
 
       if (!parsed.atsScore) {
         parsed.atsScore = calculateATS(
@@ -619,7 +611,25 @@ Rules:
           transform: translateY(-2px);
           background-color: var(--border) !important;
         }
+        @media (max-width: 600px) {
+          .home-card {
+            width: 100% !important;
+            padding: 24px 16px !important;
+            border-radius: 12px !important;
+          }
+          .home-root {
+            padding: 16px !important;
+            align-items: flex-start !important;
+          }
+          .home-title {
+            font-size: 26px !important;
+          }
+          .home-subtitle {
+            font-size: 13px !important;
+          }
+        }
       ` }} />
+
       {loading && <LoadingOverlay />}
     </div>
   )
