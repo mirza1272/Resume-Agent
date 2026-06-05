@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { calculateATS, extractMatchedSkills } from '../utils/ats'
 
@@ -10,32 +10,158 @@ export default function Home() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleGenerate() {
-    if (!jobDesc.trim()) return setError('Please paste a job description.')
+  // Job image input OCR states
+  const imageInputRef = useRef(null)
+  const [inputMethod, setInputMethod] = useState('text') // 'text' or 'image'
+  const [ocrLoading, setOcrLoading] = useState(false)
+  const [ocrExtractedText, setOcrExtractedText] = useState('')
+  const [ocrFile, setOcrFile] = useState('')
+  const [confirmStep, setConfirmStep] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+
+  // Loading overlay component (shows a spinner while tailoring runs)
+  function LoadingOverlay() {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.4)',
+          backdropFilter: 'blur(2px)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 999,
+          color: 'var(--paper)',
+          fontSize: 18,
+          fontWeight: 500,
+        }}
+      >
+        <div
+          className="spinner"
+          style={{
+            width: 48,
+            height: 48,
+            border: '4px solid var(--ink)',
+            borderTopColor: 'transparent',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginBottom: 12,
+          }}
+        />
+        <div>Analyzing job description…</div>
+      </div>
+    )
+  }
+
+
+
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragging(false)
+  }
+
+  const handleDrop = (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file && file.type.startsWith('image/')) {
+      const fakeEvent = { target: { files: [file] } }
+      handleImageUpload(fakeEvent)
+    } else {
+      setError('Please upload a valid image file.')
+    }
+  }
+
+  // Handles job posting screenshot image upload and OCR extraction using Puter vision AI
+  async function handleImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setOcrLoading(true)
+    setError('')
+    setOcrExtractedText('')
+    setOcrFile(file.name)
+    setConfirmStep(false)
+
+    try {
+      if (typeof window === 'undefined') {
+        throw new Error('Browser environment required.')
+      }
+
+      // Convert image file to base64 Data URL
+      const base64DataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (ev) => resolve(ev.target.result)
+        reader.onerror = () => reject(new Error('Failed to read image file.'))
+        reader.readAsDataURL(file)
+      })
+
+      // ----- NEW: Client‑side OCR using Tesseract.js -----
+      // Dynamically import Tesseract only when needed (avoids bundling overhead)
+      const { default: Tesseract } = await import('tesseract.js');
+      const { data: { text: ocrResult } } = await Tesseract.recognize(
+        base64DataUrl,
+        'eng',
+        { logger: m => console.log(m) }
+      );
+      const extractedText = ocrResult.trim();
+
+      if (!extractedText) {
+        throw new Error('Could not extract text from the image. Please try a cleaner screenshot.');
+      }
+
+      setOcrExtractedText(extractedText);
+      setConfirmStep(true);
+      // ---------------------------------------------------
+
+    } catch (err) {
+      setError(err.message || 'An error occurred during OCR text extraction.')
+      setOcrFile('')
+    } finally {
+      setOcrLoading(false)
+    }
+  }
+
+  // Completes the confirmation step and runs the normal tailoring flow
+  function handleOcrContinue() {
+    setConfirmStep(false)
+    setJobDesc(ocrExtractedText)
+    setTimeout(() => {
+      runTailoringWithText(ocrExtractedText)
+    }, 0)
+  }
+
+  function handleCancelOcr() {
+    setOcrFile('')
+    setOcrExtractedText('')
+    setConfirmStep(false)
+    if (imageInputRef.current) imageInputRef.current.value = ''
+  }
+
+  // Core tailoring flow that can take a manual text param or use current state
+  async function runTailoringWithText(customText) {
+    const targetText = customText || jobDesc
+    if (!targetText.trim()) return setError('Please paste a job description.')
     setError('')
     setLoading(true)
 
-    // Check if Puter JS SDK is loaded
-    if (typeof window === 'undefined' || !window.puter) {
-      setError('Puter AI script is loading. Please wait a moment and try again.')
-      setLoading(false)
-      return
-    }
-
     try {
-      // 1. Fetch base resume template from server
       const templateRes = await fetch('/api/template')
       if (!templateRes.ok) {
         throw new Error('Failed to load resume template from root directory.')
       }
       const template = await templateRes.json()
 
-      // Extract recipient email address if present in job description
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
-      const extractedEmails = jobDesc.match(emailRegex)
+      const extractedEmails = targetText.match(emailRegex)
       const extractedEmail = extractedEmails && extractedEmails.length > 0 ? extractedEmails[0] : ''
 
-      // 2. Prepare the tailor resume prompt
       const prompt = `You are an expert resume writer and ATS optimization specialist.
 
 Given the following base resume template and job description, tailor the resume to fit the job description, calculate the ATS score, and generate a professional cover email.
@@ -54,7 +180,7 @@ BASE RESUME:
 ${JSON.stringify(template, null, 2)}
 
 JOB DESCRIPTION:
-${jobDesc}
+${targetText}
 
 Respond ONLY with a valid JSON object in this exact format:
 {
@@ -130,13 +256,11 @@ Rules:
 6. Email body must start with a formal greeting, follow the structure, contain the fixed regards and candidate signature exactly, and be between 80 to 180 words total.
 7. Output ONLY valid JSON. Do not write anything else. No explanation, no markdown formatting.`
 
-      // 3. Call Puter AI client-side
       const response = await window.puter.ai.chat(prompt)
       const content = typeof response === 'string'
         ? response
         : response?.message?.content?.[0]?.text || response?.text || JSON.stringify(response)
 
-      // 4. Parse response
       let parsed
       try {
         const jsonMatch = content.match(/\{[\s\S]*\}/)
@@ -147,25 +271,22 @@ Rules:
 
       parsed.recipientEmail = extractedEmail
 
-      // Calculate local fallback/verification values if missing
       if (!parsed.atsScore) {
         parsed.atsScore = calculateATS(
-          jobDesc,
+          targetText,
           parsed.resume?.skills?.join(', ') || '',
           (parsed.resume?.experience?.map(e => `${e.title} ${e.company} ${e.bullets?.join(' ')}`).join(' ') || '') + ' ' +
           (parsed.resume?.projects?.map(p => `${p.title} ${p.bullets?.join(' ')}`).join(' ') || '')
         )
       }
       if (!parsed.skillMatch) {
-        parsed.skillMatch = extractMatchedSkills(jobDesc, parsed.resume?.skills?.join(', ') || '')
+        parsed.skillMatch = extractMatchedSkills(targetText, parsed.resume?.skills?.join(', ') || '')
       }
 
-      // 5. Save and navigate
       sessionStorage.setItem('agentData', JSON.stringify(parsed))
-      sessionStorage.setItem('jobDesc', jobDesc)
+      sessionStorage.setItem('jobDesc', targetText)
       sessionStorage.setItem('userInfo', JSON.stringify(template))
 
-      // Clear any temporary preview upload states
       sessionStorage.removeItem('uploadedFileName')
       sessionStorage.removeItem('uploadATSAnalysis')
 
@@ -175,6 +296,10 @@ Rules:
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleGenerate() {
+    await runTailoringWithText(jobDesc)
   }
 
   return (
@@ -192,73 +317,310 @@ Rules:
             Land the job.<br />
             <span style={{ color: 'var(--accent)' }}>Automate the hustle.</span>
           </h1>
-          <p style={{ color: 'var(--mid)', fontSize: 15 }}>Paste a job description → get an ATS-optimized resume, cover email, and one-click send.</p>
+          <p style={{ color: 'var(--mid)', fontSize: 15 }}>Paste job text or upload an image to get an ATS-optimized resume, cover email, and quick-send.</p>
         </div>
 
-        <div>
-          <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
-            Job Description
-          </label>
-          <textarea
-            value={jobDesc}
-            onChange={e => setJobDesc(e.target.value)}
-            placeholder="Paste the full job description here — title, requirements, responsibilities, company info..."
-            rows={14}
+        {/* Tab Selection Selector */}
+        <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', marginBottom: '24px' }}>
+          <button
+            onClick={() => { setInputMethod('text'); setError(''); }}
+            disabled={loading || ocrLoading}
             style={{
-              width: '100%',
-              padding: '16px',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              background: '#fff',
-              fontSize: 14,
-              lineHeight: 1.6,
-              color: 'var(--ink)',
-              resize: 'vertical',
-              outline: 'none',
-              fontFamily: 'DM Sans, sans-serif',
+              padding: '12px 20px',
+              background: 'none',
+              border: 'none',
+              borderBottom: inputMethod === 'text' ? '2px solid var(--accent)' : '2px solid transparent',
+              color: inputMethod === 'text' ? 'var(--ink)' : 'var(--mid)',
+              fontWeight: 600,
+              fontSize: '14px',
+              cursor: (loading || ocrLoading) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: (loading || ocrLoading) ? 0.6 : 1,
             }}
-          />
-
-          {error && (
-            <div style={{ marginTop: 16, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
-              {error}
-            </div>
-          )}
-
-          <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              style={{
-                padding: '12px 32px',
-                background: loading ? 'var(--mid)' : 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 6,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                transition: 'background-color 0.2s ease',
-              }}
-            >
-              {loading ? (
-                <>
-                  <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                  Generating Tailored Resume...
-                </>
-              ) : '⚡ Tailor My Resume & Email'}
-            </button>
-          </div>
+          >
+            📝 Paste Job Text
+          </button>
+          <button
+            onClick={() => { setInputMethod('image'); setError(''); }}
+            disabled={loading || ocrLoading}
+            style={{
+              padding: '12px 20px',
+              background: 'none',
+              border: 'none',
+              borderBottom: inputMethod === 'image' ? '2px solid var(--accent)' : '2px solid transparent',
+              color: inputMethod === 'image' ? 'var(--ink)' : 'var(--mid)',
+              fontWeight: 600,
+              fontSize: '14px',
+              cursor: (loading || ocrLoading) ? 'not-allowed' : 'pointer',
+              transition: 'all 0.2s ease',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              opacity: (loading || ocrLoading) ? 0.6 : 1,
+            }}
+          >
+            📷 Upload Job Image
+          </button>
         </div>
+
+        {/* Input Methods Body */}
+        {inputMethod === 'text' ? (
+          <div>
+            <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+              Job Description Text
+            </label>
+            <textarea
+              value={jobDesc}
+              onChange={e => setJobDesc(e.target.value)}
+              placeholder="Paste the full job description here — title, requirements, responsibilities, company info..."
+              rows={14}
+              style={{
+                width: '100%',
+                padding: '16px',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                background: '#fff',
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: 'var(--ink)',
+                resize: 'vertical',
+                outline: 'none',
+                fontFamily: 'DM Sans, sans-serif',
+              }}
+            />
+
+            {error && (
+              <div style={{ marginTop: 16, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ marginTop: 24, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={handleGenerate}
+                disabled={loading}
+                style={{
+                  padding: '12px 32px',
+                  background: loading ? 'var(--mid)' : 'var(--accent)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  transition: 'background-color 0.2s ease',
+                }}
+              >
+                {loading ? (
+                  <>
+                    <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Generating Tailored Resume...
+                  </>
+                ) : '⚡ Tailor My Resume & Email'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* Image Flow */
+          <div>
+            {!confirmStep ? (
+              <div>
+                <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+                  Job Posting Image
+                </label>
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  onClick={() => !ocrLoading && imageInputRef.current?.click()}
+                  style={{
+                    border: isDragging ? '2px dashed var(--accent)' : '2px dashed var(--border)',
+                    borderRadius: '12px',
+                    padding: '64px 24px',
+                    textAlign: 'center',
+                    background: isDragging ? 'rgba(200, 67, 26, 0.04)' : '#fff',
+                    cursor: ocrLoading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s ease',
+                    position: 'relative',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <input
+                    type="file"
+                    ref={imageInputRef}
+                    onChange={handleImageUpload}
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                  />
+
+                  {ocrLoading ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                      <div style={{ position: 'relative', width: '64px', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '48px', height: '48px', border: '3px solid rgba(200, 67, 26, 0.15)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                        <div style={{ position: 'absolute', width: '12px', height: '12px', background: 'var(--accent)', borderRadius: '50%', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                      </div>
+                      <div style={{ marginTop: '8px' }}>
+                        <h3 style={{ margin: '0 0 6px 0', fontSize: '16px', fontWeight: 600 }}>Analyzing Image...</h3>
+                        <p style={{ margin: 0, fontSize: '13px', color: 'var(--mid)' }}>Extracting job posting text with Puter AI</p>
+                      </div>
+                      <div style={{
+                        position: 'absolute',
+                        left: 0,
+                        right: 0,
+                        height: '2px',
+                        background: 'linear-gradient(90deg, transparent, var(--accent), transparent)',
+                        animation: 'scan 2.5s ease-in-out infinite',
+                        boxShadow: '0 0 8px var(--accent)',
+                        zIndex: 10,
+                      }} />
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                      <div className="upload-icon-container" style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '28px' }}>📷</span>
+                      </div>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Upload job posting image</h3>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '14px', color: 'var(--mid)' }}>
+                        Drag and drop your screenshot here, or <span style={{ color: 'var(--accent)', fontWeight: 600 }}>browse files</span>
+                      </p>
+                      <span style={{ fontSize: '11px', color: 'var(--mid)', fontFamily: 'DM Mono, monospace', marginTop: '12px' }}>
+                        Supports PNG, JPG, JPEG
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {error && (
+                  <div style={{ marginTop: 16, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
+                    {error}
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Image OCR Confirmation Step */
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: '8px' }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block' }}>
+                      Extracted Job Description
+                    </label>
+                    <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: 'var(--mid)' }}>
+                      Review and edit the extracted details before generating the tailored application.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', background: 'var(--surface)', color: 'var(--ink)', padding: '6px 12px', borderRadius: '12px', fontWeight: 500, fontFamily: 'DM Mono, monospace' }}>
+                      📄 {ocrFile}
+                    </span>
+                  </div>
+                </div>
+
+                <textarea
+                  value={ocrExtractedText}
+                  onChange={e => setOcrExtractedText(e.target.value)}
+                  placeholder="Extracted job description text..."
+                  rows={14}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    border: '1px solid var(--border)',
+                    borderRadius: 8,
+                    background: '#fff',
+                    fontSize: 14,
+                    lineHeight: 1.6,
+                    color: 'var(--ink)',
+                    resize: 'vertical',
+                    outline: 'none',
+                    fontFamily: 'DM Sans, sans-serif',
+                  }}
+                />
+
+                {error && (
+                  <div style={{ marginTop: 16, padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
+                    {error}
+                  </div>
+                )}
+
+                <div style={{ marginTop: 24, display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+                  <button
+                    onClick={handleCancelOcr}
+                    disabled={loading}
+                    style={{
+                      padding: '12px 24px',
+                      background: 'none',
+                      border: '1px solid var(--border)',
+                      borderRadius: 6,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: loading ? 'not-allowed' : 'pointer',
+                      color: 'var(--ink)',
+                      transition: 'all 0.2s ease',
+                    }}
+                  >
+                    ✕ Try Another Image
+                  </button>
+
+                  <button
+                    onClick={handleOcrContinue}
+                    disabled={loading || !ocrExtractedText.trim()}
+                    style={{
+                      padding: '12px 32px',
+                      background: loading ? 'var(--mid)' : 'var(--accent)',
+                      color: '#fff',
+                      border: 'none',
+                      borderRadius: 6,
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: (loading || !ocrExtractedText.trim()) ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      transition: 'background-color 0.2s ease',
+                    }}
+                  >
+                    {loading ? (
+                      <>
+                        <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                        Generating Tailored Resume...
+                      </>
+                    ) : '⚡ Continue & Tailor Resume'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
-      <style>{`
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 0.8; }
+          50% { transform: scale(1.2); opacity: 1; }
+        }
+        @keyframes scan {
+          0% { top: 0%; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
+          100% { top: 100%; opacity: 0; }
+        }
         textarea:focus { border-color: var(--ink) !important; box-shadow: 0 0 0 3px rgba(15,15,15,0.06); }
-      `}</style>
+        .upload-icon-container {
+          transition: transform 0.2s ease, background-color 0.2s ease;
+        }
+        div:hover > .upload-icon-container {
+          transform: translateY(-2px);
+          background-color: var(--border) !important;
+        }
+      ` }} />
+      {loading && <LoadingOverlay />}
     </div>
   )
 }

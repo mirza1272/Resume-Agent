@@ -4,6 +4,27 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 
+// Simple helpers to extract job title and company name from the raw job description text
+function extractJobTitle(text) {
+  // Look for a line that looks like a title (e.g., "Senior Software Engineer at Acme Corp")
+  const titleRegex = /^(?:Senior|Junior|Lead|Principal)?\s*\w[\w\s&-]+(?=\s+(?:at|@|\-)|$)/im;
+  const match = text.match(titleRegex);
+  return match ? match[0].trim() : '';
+}
+
+function extractCompanyName(text) {
+  // Try to capture text after "at" or after a dash following the title
+  const companyRegex = /(?:at|@|\-+)\s*([\w&.\-]+(?:\s[\w&.\-]+)*)/i;
+  const match = text.match(companyRegex);
+  return match ? match[1].trim() : '';
+}
+
+function extractKeyRequirements(text) {
+  // Grab up to 5 bullet‑style lines that look like requirements
+  const lines = text.split('\n').filter(l => /^\s*[-*•\d]/.test(l));
+  return lines.slice(0, 5).join(' ; ');
+}
+
 const ResumePDFViewer = dynamic(() => import('../../components/ResumePDFViewer'), { ssr: false })
 
 export default function PreviewPage() {
@@ -86,6 +107,10 @@ export default function PreviewPage() {
       const uploadAnalysis = sessionStorage.getItem('uploadATSAnalysis')
 
       // 2. Prepare prompting
+      const jobTitle = extractJobTitle(jobDesc);
+      const companyName = extractCompanyName(jobDesc);
+      const keyRequirements = extractKeyRequirements(jobDesc);
+
       const prompt = `You are an expert resume writer and ATS optimization specialist.
 
 Given the following base resume template and job description, tailor the resume to fit the job description, calculate the ATS score, and generate a professional cover email.
@@ -98,7 +123,12 @@ The applicant is:
 - Actively building real-world projects (including AI Resume Agent, CNN-based classifiers, and web applications)
 - Actively applying for internships and junior software/AI roles
 - Goal: To get AI/ML Engineer or Software Engineer internships
-This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
+- This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
+
+JOB CONTEXT (NEW):
+- Position: ${jobTitle}
+- Company: ${companyName}
+- Key requirements: ${keyRequirements}
 
 BASE RESUME:
 ${JSON.stringify(template, null, 2)}
