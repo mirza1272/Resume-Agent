@@ -165,6 +165,10 @@ Rules:
       sessionStorage.setItem('jobDesc', jobDesc)
       sessionStorage.setItem('userInfo', JSON.stringify(template))
 
+      // Clear any temporary preview upload states
+      sessionStorage.removeItem('uploadedFileName')
+      sessionStorage.removeItem('uploadATSAnalysis')
+
       router.push('/preview')
     } catch (e) {
       setError(e.message || 'An error occurred during resume generation.')

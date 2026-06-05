@@ -1,8 +1,5 @@
 import { NextResponse } from 'next/server'
 import nodemailer from 'nodemailer'
-import React from 'react'
-
-const el = React.createElement
 
 export async function POST(req) {
   try {
@@ -26,7 +23,7 @@ export async function POST(req) {
     const htmlBody = `
 <!DOCTYPE html>
 <html>
-<body style="font-family: Georgia, serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a; line-height: 1.7;">
+<body style="font-family: Arial, Helvetica, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1a1a1a; line-height: 1.6;">
   ${(emailContent?.body || '').split('\n').map(p => p.trim() ? `<p style="margin: 0 0 14px;">${p}</p>` : '<br/>').join('')}
   <hr style="border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;" />
   <p style="font-size: 13px; color: #666;">Resume attached as PDF</p>
@@ -67,6 +64,8 @@ export async function POST(req) {
 async function generatePDFBuffer(r) {
   if (!r) throw new Error('No resume data provided')
 
+  const React = require('react')
+  const el = React.createElement
   const { pdf, Document, Page, Text, View, StyleSheet, Link, Svg, Path } = require('@react-pdf/renderer')
 
   // Auto-scaling logic to enforce single-page constraint

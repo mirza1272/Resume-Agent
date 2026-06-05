@@ -31,6 +31,9 @@ export default function PreviewPage() {
   // Custom PDF upload
   const [customPDF, setCustomPDF] = useState(null)
   const fileRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+  const [customAtsAnalysis, setCustomAtsAnalysis] = useState(null)
+  const [uploadFileName, setUploadFileName] = useState('')
 
   // Memoize the heavy PDF rendering to prevent lag on keystroke changes
   const pdfViewerEl = useMemo(() => {
@@ -68,10 +71,19 @@ export default function PreviewPage() {
     setEditLoading(true)
     setEditError('')
     try {
-      // 1. Fetch template from server
-      const templateRes = await fetch('/api/template')
-      if (!templateRes.ok) throw new Error('Failed to load resume template.')
-      const template = await templateRes.json()
+      // 1. Fetch template from server (or merge with uploaded file if present)
+      let template
+      const uploadedEnriched = sessionStorage.getItem('uploadedEnrichedResume')
+      if (uploadedEnriched) {
+        template = JSON.parse(uploadedEnriched)
+      } else {
+        const templateRes = await fetch('/api/template')
+        if (!templateRes.ok) throw new Error('Failed to load resume template.')
+        template = await templateRes.json()
+      }
+
+      // Check for upload evaluation context
+      const uploadAnalysis = sessionStorage.getItem('uploadATSAnalysis')
 
       // 2. Prepare prompting
       const prompt = `You are an expert resume writer and ATS optimization specialist.
@@ -90,6 +102,10 @@ This context MUST be included implicitly in every email generation task. Do NOT 
 
 BASE RESUME:
 ${JSON.stringify(template, null, 2)}
+
+${uploadAnalysis ? `PREVIOUS ATS EVALUATION OF UPLOADED RESUME (Ensure tailoring addresses missing skills and highlights strengths):
+${uploadAnalysis}
+` : ''}
 
 JOB DESCRIPTION:
 ${jobDesc}
@@ -224,6 +240,8 @@ Rules:
     setEditLoading(true)
     setEditError('')
     try {
+      const uploadAnalysis = sessionStorage.getItem('uploadATSAnalysis')
+
       const prompt = `You are an expert resume writer. The user wants to edit their tailored resume and cover email based on their feedback.
 
 USER CONTEXT (MANDATORY INJECTION):
@@ -235,6 +253,10 @@ The applicant is:
 - Actively applying for internships and junior software/AI roles
 - Goal: To get AI/ML Engineer or Software Engineer internships
 This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
+
+${uploadAnalysis ? `PREVIOUS ATS EVALUATION OF UPLOADED RESUME:
+${uploadAnalysis}
+` : ''}
 
 CURRENT RESUME DATA:
 ${JSON.stringify(data.resume, null, 2)}
@@ -377,14 +399,178 @@ Rules:
     }
   }
 
-  function handleFileUpload(e) {
+  // PDF Text Extraction using client-side PDF.js
+  async function extractTextFromPDF(dataUrl) {
+    if (typeof window === 'undefined' || !window.pdfjsLib) {
+      throw new Error('PDF.js library is loading. Please wait and try again.')
+    }
+    const pdfjsLib = window.pdfjsLib
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'
+
+    const loadingTask = pdfjsLib.getDocument(dataUrl)
+    const pdf = await loadingTask.promise
+    let text = ''
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const strings = content.items.map(item => item.str)
+      text += strings.join(' ') + '\n'
+    }
+    return text
+  }
+
+  // Word DOCX Text Extraction using Mammoth.js
+  function readDocxFile(file) {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined' || !window.mammoth) {
+        return reject(new Error('Mammoth.js library is loading. Please wait.'))
+      }
+      const reader = new FileReader()
+      reader.onload = (loadEvent) => {
+        const arrayBuffer = loadEvent.target.result
+        window.mammoth.extractRawText({ arrayBuffer })
+          .then(result => resolve(result.value))
+          .catch(reject)
+      }
+      reader.onerror = () => reject(new Error('Failed to read file buffer.'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
+  // Plain Text file reader
+  function readTxtFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target.result)
+      reader.onerror = () => reject(new Error('Failed to read text file.'))
+      reader.readAsText(file)
+    })
+  }
+
+  // Remove the custom resume upload and restore the originally tailored resume
+  function handleRemoveUpload() {
+    setCustomPDF(null)
+    setCustomAtsAnalysis(null)
+    setUploadFileName('')
+    if (fileRef.current) fileRef.current.value = ''
+
+    // Restore original tailored data from sessionStorage
+    const d = sessionStorage.getItem('agentData')
+    if (d) {
+      setData(JSON.parse(d))
+    }
+  }
+
+  // Handles custom resume upload, parsing, and real-time ATS re-evaluation
+  async function handleFileUpload(e) {
     const file = e.target.files[0]
     if (!file) return
+
+    setUploading(true)
+    setEditError('')
+    setCustomAtsAnalysis(null)
+    setUploadFileName(file.name)
+
+    // Read file as data URL to preview inside the PDF viewer iframe
     const reader = new FileReader()
     reader.onload = (ev) => {
       setCustomPDF(ev.target.result)
     }
     reader.readAsDataURL(file)
+
+    try {
+      let extractedText = ''
+
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const rdr = new FileReader()
+          rdr.onload = (ev) => resolve(ev.target.result)
+          rdr.onerror = () => reject(new Error('Failed to read PDF file.'))
+          rdr.readAsDataURL(file)
+        })
+        extractedText = await extractTextFromPDF(dataUrl)
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+        extractedText = await readDocxFile(file)
+      } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        extractedText = await readTxtFile(file)
+      } else {
+        throw new Error('Unsupported file format. Please upload PDF, DOCX, or TXT.')
+      }
+
+      if (!extractedText.trim()) {
+        throw new Error('Could not extract text from file.')
+      }
+
+      if (typeof window === 'undefined' || !window.puter) {
+        throw new Error('Puter AI script is loading. Please wait a moment and try again.')
+      }
+
+      const prompt = `You are an expert ATS (Applicant Tracking System) reviewer and AI career coach.
+Analyze the following custom uploaded resume text against the target job description.
+
+CUSTOM RESUME TEXT:
+${extractedText}
+
+TARGET JOB DESCRIPTION:
+${jobDesc}
+
+Respond ONLY with a valid JSON object in this exact format:
+{
+  "atsScore": <number 0-100 evaluating how well this custom resume aligns with the job description>,
+  "summary": "<2-3 sentence professional analysis of this resume's alignment with the job>",
+  "strengths": [
+    "<strength bullet 1>",
+    "<strength bullet 2>"
+  ],
+  "missingSkills": [
+    "<key technologies or skills required in the job description that are missing from this custom resume>"
+  ],
+  "matchedSkills": [
+    "<technologies or skills from the custom resume that match the job description, max 10>"
+  ]
+}
+
+Rules:
+1. Provide an honest, accurate ATS score based on keyword match, experience relevance, and skills match.
+2. Output ONLY valid JSON.`
+
+      const response = await window.puter.ai.chat(prompt)
+      const content = typeof response === 'string'
+        ? response
+        : response?.message?.content?.[0]?.text || response?.text || JSON.stringify(response)
+
+      let parsed
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/)
+        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
+      } catch {
+        throw new Error('Failed to parse ATS evaluation from AI. Please try again.')
+      }
+
+      // Update the main page data with the new score and skills matching of the custom uploaded resume
+      setData(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          atsScore: parsed.atsScore,
+          skillMatch: {
+            matched: parsed.matchedSkills || [],
+            missing: parsed.missingSkills || []
+          }
+        }
+      })
+
+      setCustomAtsAnalysis({
+        summary: parsed.summary,
+        strengths: parsed.strengths
+      })
+    } catch (e) {
+      setEditError(e.message || 'An error occurred during custom resume ATS evaluation.')
+      setCustomPDF(null)
+      setUploadFileName('')
+    } finally {
+      setUploading(false)
+    }
   }
 
   function getScoreColor(score) {
@@ -463,18 +649,26 @@ Rules:
           {activeTab === 'resume' && (
             <div>
               <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  style={{ padding: '6px 14px', border: '1px solid var(--border)', background: '#fff', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: 'var(--mid)' }}
-                >
-                  📎 Upload Custom Resume
-                </button>
-                {customPDF && (
-                  <button onClick={() => setCustomPDF(null)} style={{ padding: '6px 14px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: '#dc2626' }}>
-                    ✕ Remove Upload
+                {!uploading && (
+                  <button
+                    onClick={() => fileRef.current?.click()}
+                    style={{ padding: '6px 14px', border: '1px solid var(--border)', background: '#fff', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: 'var(--mid)' }}
+                  >
+                    📎 Upload Custom Resume
                   </button>
                 )}
-                <input ref={fileRef} type="file" accept=".pdf" onChange={handleFileUpload} style={{ display: 'none' }} />
+                {uploading && (
+                  <span style={{ fontSize: 12, color: 'var(--mid)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(0,0,0,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Parsing & evaluating resume...
+                  </span>
+                )}
+                {(customPDF || uploadFileName) && !uploading && (
+                  <button onClick={handleRemoveUpload} style={{ padding: '6px 14px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: '#dc2626' }}>
+                    ✕ Remove Custom Resume
+                  </button>
+                )}
+                <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
               </div>
 
               {customPDF ? (
@@ -573,35 +767,61 @@ Rules:
               ATS Analysis
             </h3>
 
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, color: 'var(--mid)' }}>Keywords & Skills Match</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: getScoreColor(score) }}>{score}%</span>
+            {uploading ? (
+              <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                <div style={{ width: 28, height: 28, border: '2.5px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
+                <p style={{ fontSize: 13, color: 'var(--mid)', fontWeight: 500 }}>Evaluating uploaded resume...</p>
               </div>
-              <div style={{ height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${score}%`, background: getScoreColor(score), borderRadius: 3, transition: 'width 0.6s ease' }} />
-              </div>
-            </div>
-
-            {data.skillMatch && (
-              <div>
-                <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Matched Skills</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {(data.skillMatch.matched || []).slice(0, 8).map((s, i) => (
-                    <span key={i} style={{ padding: '3px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, fontSize: 11, color: '#16a34a' }}>{s}</span>
-                  ))}
+            ) : (
+              <>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: 'var(--mid)' }}>Keywords & Skills Match</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: getScoreColor(score) }}>{score}%</span>
+                  </div>
+                  <div style={{ height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${score}%`, background: getScoreColor(score), borderRadius: 3, transition: 'width 0.6s ease' }} />
+                  </div>
                 </div>
-                {(data.skillMatch.missing || []).length > 0 && (
-                  <>
-                    <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, marginTop: 12 }}>Missing Skills</p>
+
+                {data.skillMatch && (
+                  <div>
+                    <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Matched Skills</p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {(data.skillMatch.missing || []).slice(0, 5).map((s, i) => (
-                        <span key={i} style={{ padding: '3px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, fontSize: 11, color: '#dc2626' }}>{s}</span>
+                      {(data.skillMatch.matched || []).slice(0, 8).map((s, i) => (
+                        <span key={i} style={{ padding: '3px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, fontSize: 11, color: '#16a34a' }}>{s}</span>
                       ))}
                     </div>
-                  </>
+                    {(data.skillMatch.missing || []).length > 0 && (
+                      <>
+                        <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, marginTop: 12 }}>Missing Skills</p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {(data.skillMatch.missing || []).slice(0, 5).map((s, i) => (
+                            <span key={i} style={{ padding: '3px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, fontSize: 11, color: '#dc2626' }}>{s}</span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
                 )}
-              </div>
+
+                {customAtsAnalysis && (
+                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                    <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Custom Evaluation</h4>
+                    <p style={{ fontSize: 12, color: 'var(--mid)', lineHeight: 1.5, marginBottom: 12 }}>{customAtsAnalysis.summary}</p>
+
+                    <h5 style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Key Strengths</h5>
+                    <ul style={{ padding: 0, margin: 0, listStyle: 'none' }}>
+                      {(customAtsAnalysis.strengths || []).map((s, i) => (
+                        <li key={i} style={{ fontSize: 12, color: 'var(--ink)', marginBottom: 4, display: 'flex', gap: 4, alignItems: 'start' }}>
+                          <span style={{ color: '#16a34a', fontWeight: 'bold' }}>✓</span>
+                          <span>{s}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
