@@ -1,0 +1,108 @@
+{
+  "name": "Haseeb Ur Rahman",
+  "title": "Software Engineer",
+  "email": "mirzahaseeb0566@gmail.com",
+  "phone": "+92 303 8607925",
+  "location": "Lahore, Pakistan",
+  "linkedin": "linkedin.com/in/mirzahaseeb",
+  "github": "github.com/mirzahaseeb",
+  "portfolio": "portfolio-url",
+  "summary": "Computer Science student at FAST National University passionate about Web Development, Artificial Intelligence, and Machine Learning. Experienced in building real-world applications and committed to developing innovative, scalable, and impactful technology solutions.",
+  "experience": [
+    {
+      "title": "ML Engineer",
+      "company": "CodeCelix",
+      "dates": "Dec 2025 – Mar 2026",
+      "location": "Remote",
+      "bullets": [
+        "Led a team of 5 members while developing and optimizing real-world Machine Learning and Deep Learning models using Python, Scikit-learn, TensorFlow, and Keras for data preprocessing, training, and evaluation."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Bachelor’s in Computer Science",
+      "school": "FAST National University of Computer and Emerging Sciences",
+      "year": "2023 – present",
+      "location": "Pakistan"
+    },
+    {
+      "degree": "Intermediate in Computer Science (ICS)",
+      "school": "Aspire Group of Colleges",
+      "year": "2021 – 2023",
+      "location": "Pakistan"
+    },
+    {
+      "degree": "Matric",
+      "school": "Govt. Comprehensive School",
+      "year": "2014 – 2021",
+      "location": "Pakistan"
+    }
+  ],
+  "skills": [
+    "Python",
+    "NumPy",
+    "Pandas",
+    "Matplotlib",
+    "Scikit-learn",
+    "Machine Learning",
+    "Deep Learning",
+    "TensorFlow",
+    "CNN",
+    "Figma",
+    "HTML5",
+    "CSS3",
+    "JavaScript",
+    "React",
+    "Tailwind CSS",
+    "Nodejs",
+    "SQL",
+    "MongoDB",
+    "Git",
+    "Expressjs"
+  ],
+  "projects": [
+    {
+      "title": "ApplyForge",
+      "subtitle": "Web Application in Django",
+      "bullets": [
+        "Built a job portal where companies post jobs and candidates apply through role-based dashboards."
+      ]
+    },
+    {
+      "title": "HRConnect",
+      "subtitle": "ATS System",
+      "bullets": [
+        "Built a MERN-based recruitment system for managing job postings, applications, and hiring workflows across multiple branches. Developed responsive frontend interfaces using React, HTML, CSS, and Tailwind CSS for user dashboards and admin panels."
+      ]
+    },
+    {
+      "title": "Recommendation System",
+      "subtitle": "Hybrid Movie Recommendation",
+      "bullets": [
+        "Engineered a hybrid AI Movie Recommendation System that combines classical AI techniques (BFS, DFS, A*, CSP, heuristics) with machine learning (K-Means clustering and ANN using PyTorch/TensorFlow)."
+      ]
+    },
+    {
+      "title": "Income Classification Model",
+      "subtitle": "Prediction using Demographic Data",
+      "bullets": [
+        "Created a ML model to predict whether an individual's annual income exceeds $50K, based on demographic and employment-related attributes from the Adult Census Income Dataset."
+      ]
+    },
+    {
+      "title": "Price Prediction",
+      "subtitle": "Stock Price Prediction",
+      "bullets": [
+        "Implemented an end-to-end Machine Learning pipeline for predicting stock price trends using multiple classical ML models and deep learning (LSTM) techniques for stock market forecasting."
+      ]
+    },
+    {
+      "title": "X-ray Chest Classification",
+      "subtitle": "Deep Learning Model for Pneumonia Detection",
+      "bullets": [
+        "Developed a CNN-based image classification model for detecting chest conditions from X-ray images. Implemented data preprocessing, training, and performance evaluation to achieve reliable predictions."
+      ]
+    }
+  ]
+}
