@@ -84,6 +84,10 @@ export default function AuthButton() {
 
       // Navigate to home and force reload for fresh state
       router.push('/')
+
+      // Dispatch custom app-logout event for ClientLoginGate
+      window.dispatchEvent(new Event('app-logout'))
+
       setTimeout(() => {
         window.location.reload()
       }, 100)
