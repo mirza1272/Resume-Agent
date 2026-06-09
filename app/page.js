@@ -1,10 +1,12 @@
 'use client'
 import { generateEmail } from '../lib/emailTemplates'
+import Tesseract from 'tesseract.js'
 
 import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { calculateATS, extractMatchedSkills } from '../utils/ats'
 import AuthButton from '../components/AuthButton'
+import SettingsButton from '../components/SettingsButton'
 
 export default function Home() {
   const router = useRouter()
@@ -20,6 +22,112 @@ export default function Home() {
   const [ocrFile, setOcrFile] = useState('')
   const [confirmStep, setConfirmStep] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+
+  // Resume Upload states
+  const [resumeFile, setResumeFile] = useState(null)
+  const [resumeDataUrl, setResumeDataUrl] = useState('')
+  const [resumeExtractedText, setResumeExtractedText] = useState('')
+  const resumeInputRef = useRef(null)
+
+  // Document extractors
+  async function extractTextFromPDF(dataUrl) {
+    if (typeof window === 'undefined' || !window.pdfjsLib) {
+      throw new Error('PDF.js library is loading. Please wait and try again.')
+    }
+    const pdfjsLib = window.pdfjsLib
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'
+    const loadingTask = pdfjsLib.getDocument(dataUrl)
+    const pdf = await loadingTask.promise
+    let text = ''
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const items = content.items.filter(item => item.str?.trim() || item.str === ' ')
+      items.sort((a, b) => {
+        const yDiff = b.transform[5] - a.transform[5]
+        if (Math.abs(yDiff) > 4) return yDiff
+        return a.transform[4] - b.transform[4]
+      })
+      let lastY = -1
+      const textItems = []
+      for (const item of items) {
+        const currentY = item.transform[5]
+        if (lastY !== -1 && Math.abs(currentY - lastY) > 4) {
+          textItems.push('\n')
+        } else if (lastY !== -1 && textItems.length > 0 && textItems[textItems.length - 1] !== '\n') {
+          const lastStr = textItems[textItems.length - 1]
+          if (!lastStr.endsWith(' ') && !item.str.startsWith(' ')) textItems.push(' ')
+        }
+        textItems.push(item.str)
+        lastY = currentY
+      }
+      text += textItems.join('') + '\n\n'
+    }
+    return text
+  }
+
+  function readDocxFile(file) {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined' || !window.mammoth) return reject(new Error('Mammoth.js library is loading. Please wait.'))
+      const reader = new FileReader()
+      reader.onload = (loadEvent) => {
+        const arrayBuffer = loadEvent.target.result
+        window.mammoth.extractRawText({ arrayBuffer })
+          .then(result => resolve(result.value))
+          .catch(reject)
+      }
+      reader.onerror = () => reject(new Error('Failed to read file buffer.'))
+      reader.readAsArrayBuffer(file)
+    })
+  }
+
+  function readTxtFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => resolve(e.target.result)
+      reader.onerror = () => reject(new Error('Failed to read text file.'))
+      reader.readAsText(file)
+    })
+  }
+
+  async function handleResumeUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setResumeFile(file)
+    setError('')
+
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setResumeDataUrl(ev.target.result)
+    }
+    reader.readAsDataURL(file)
+
+    try {
+      let extractedText = ''
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const dataUrl = await new Promise((resolve, reject) => {
+          const rdr = new FileReader()
+          rdr.onload = (ev) => resolve(ev.target.result)
+          rdr.onerror = () => reject(new Error('Failed to read PDF file.'))
+          rdr.readAsDataURL(file)
+        })
+        extractedText = await extractTextFromPDF(dataUrl)
+      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+        extractedText = await readDocxFile(file)
+      } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
+        extractedText = await readTxtFile(file)
+      } else {
+        throw new Error('Unsupported file format. Please upload PDF, DOCX, or TXT.')
+      }
+
+      if (!extractedText.trim()) throw new Error('Could not extract text from file.')
+      setResumeExtractedText(extractedText)
+    } catch (err) {
+      setError(err.message || 'Error parsing resume file.')
+      setResumeFile(null)
+      setResumeDataUrl('')
+    }
+  }
 
   // Loading overlay component (shows a spinner while tailoring runs)
   function LoadingOverlay() {
@@ -105,8 +213,6 @@ export default function Home() {
       })
 
       // ----- NEW: Client‑side OCR using Tesseract.js -----
-      // Dynamically import Tesseract only when needed (avoids bundling overhead)
-      const { default: Tesseract } = await import('tesseract.js');
       const { data: { text: ocrResult } } = await Tesseract.recognize(
         base64DataUrl,
         'eng',
@@ -150,101 +256,37 @@ export default function Home() {
   async function runTailoringWithText(customText) {
     const targetText = customText || jobDesc
     if (!targetText.trim()) return setError('Please paste a job description.')
+    if (!resumeExtractedText.trim()) return setError('Please upload a resume to continue.')
     setError('')
     setLoading(true)
 
     try {
-      const templateRes = await fetch('/api/template')
-      if (!templateRes.ok) {
-        throw new Error('Failed to load resume template from root directory.')
-      }
-      const template = await templateRes.json()
-
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
       const extractedEmails = targetText.match(emailRegex)
       const extractedEmail = extractedEmails && extractedEmails.length > 0 ? extractedEmails[0] : ''
 
-      const prompt = `You are an expert resume writer and ATS optimization specialist.
+      const prompt = `You are an expert ATS evaluator. Your job is to accurately analyze an uploaded resume against a target job description.
 
-Given the following base resume template and job description, tailor the resume to fit the job description, calculate the ATS score, and generate a professional cover email.
+UPLOADED RESUME TEXT:
+${resumeExtractedText}
 
-USER CONTEXT (MANDATORY INJECTION):
-The applicant is:
-- A Computer Science student
-- Specializing in Artificial Intelligence and Machine Learning
-- Skilled in Python, Deep Learning, and Full-Stack Development
-- Actively building real-world projects (including AI Resume Agent, CNN-based classifiers, and web applications)
-- Actively applying for internships and junior software/AI roles
-- Goal: To get AI/ML Engineer or Software Engineer internships
-This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
-
-BASE RESUME:
-${JSON.stringify(template, null, 2)}
-
-JOB DESCRIPTION:
+TARGET JOB DESCRIPTION:
 ${targetText}
 
 Respond ONLY with a valid JSON object in this exact format:
 {
-  "atsScore": <number 0-100. Use this STRICT rubric — do NOT inflate:
-    - Count how many SPECIFIC tech skills/tools from the job description are present in the resume
-    - 90-100: Resume covers 90%+ of required tech skills + direct role experience match
-    - 75-89: Covers 70-89% of required skills, mostly relevant experience
-    - 60-74: Covers 50-69% of skills, partial experience match
-    - 40-59: Covers 30-49% of skills, indirect relevance
-    - Below 40: Covers less than 30% of specific requirements
-    Be honest and strict. A student resume applying for a senior role should NOT score above 70.
-    Only hard skills, tools, frameworks, and languages count — NOT soft skills or general experience phrases.>,
-  "resume": {
-    "name": "${template.name}",
-    "title": "${template.title || 'Software Engineer'}",
-    "email": "${template.email}",
-    "phone": "${template.phone || ''}",
-    "location": "${template.location || ''}",
-    "linkedin": "${template.linkedin || ''}",
-    "github": "${template.github || ''}",
-    "portfolio": "${template.portfolio || ''}",
-    "summary": "<2-3 sentence tailored summary matching the job description>",
-    "experience": [
-      {
-        "title": "<tailored job title or template title>",
-        "company": "<company from template>",
-        "dates": "<dates from template>",
-        "location": "<location from template>",
-        "bullets": ["<tailored bullet 1>", "<tailored bullet 2>", "<tailored bullet 3>"]
-      }
-    ],
-    "education": [
-      {
-        "degree": "<degree from template>",
-        "school": "<school from template>",
-        "year": "<year from template>",
-        "location": "<location from template>"
-      }
-    ],
-    "skills": ["<selected skills from template + additional relevant skills, max 20 items>"],
-    "projects": [
-      {
-        "title": "<project title from template>",
-        "subtitle": "<project subtitle/tech stack from template>",
-        "bullets": ["<tailored achievement bullet focusing on keywords - MUST be 1-2 lines maximum, no longer>"]
-      }
-    ]
-  },
+  "atsScore": <number 0-100. Evaluate Skill Match, Experience Match, Project Relevance, Education Relevance, Missing Keywords, Job-Specific Requirements. Be honest and strict.>,
+  "strengths": ["<List 2-3 specific strong points of the resume for this job>"],
+  "recommendations": ["<Provide 2-3 specific, actionable recommendations to improve the resume based on the actual job description. Must NOT be generic.>"],
   "skillMatch": {
-    "matched": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that exist in the resume. Do NOT include soft skills, experience levels, or generic words. Max 10 items.>"],
-    "missing": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that are NOT in the resume. Each item must be a named technology — NOT a vague phrase like 'production experience'. Max 6 items. If nothing is missing, return an empty array.>"]
+    "matched": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that exist in the resume. Max 10 items.>"],
+    "missing": ["<ONLY list specific tools, frameworks, languages, or libraries from the job description that are NOT in the resume. Max 6 items. If nothing is missing, return an empty array.>"]
   }
 }
 
 Rules:
-1. Wording must sound human-written, natural, and not AI-generated. Avoid exaggerated claims and preserve existing achievements.
-2. Maintain the candidate's core identity (name, email, phone, location, linkedin, github, portfolio, school, company names, dates). Do not invent new jobs or schools.
-3. Tailor the summary, skills selection, and experience/project bullets to highlight achievements and keywords that match the job description.
-4. Each project bullet/description MUST be exactly 1 to 2 lines maximum. Keep it concise.
-5. Email subject line must be under 60 characters.
-6. Email body must start with a formal greeting, follow the structure, contain the fixed regards and candidate signature exactly, and be between 80 to 180 words total.
-7. Output ONLY valid JSON. Do not write anything else. No explanation, no markdown formatting.`
+1. Do NOT invent information. ONLY use the provided uploaded resume text.
+2. Output ONLY valid JSON. Do not write anything else.`
 
       const response = await window.puter.ai.chat(prompt)
       const content = typeof response === 'string'
@@ -265,22 +307,18 @@ Rules:
       parsed.email = generateEmail(targetText)
 
       if (!parsed.atsScore) {
-        parsed.atsScore = calculateATS(
-          targetText,
-          parsed.resume?.skills?.join(', ') || '',
-          (parsed.resume?.experience?.map(e => `${e.title} ${e.company} ${e.bullets?.join(' ')}`).join(' ') || '') + ' ' +
-          (parsed.resume?.projects?.map(p => `${p.title} ${p.bullets?.join(' ')}`).join(' ') || '')
-        )
+        parsed.atsScore = calculateATS(targetText, resumeExtractedText, '')
       }
       if (!parsed.skillMatch) {
-        parsed.skillMatch = extractMatchedSkills(targetText, parsed.resume?.skills?.join(', ') || '')
+        parsed.skillMatch = extractMatchedSkills(targetText, resumeExtractedText)
       }
 
       sessionStorage.setItem('agentData', JSON.stringify(parsed))
       sessionStorage.setItem('jobDesc', targetText)
-      sessionStorage.setItem('userInfo', JSON.stringify(template))
+      sessionStorage.setItem('uploadedFileName', resumeFile?.name || 'Resume.pdf')
+      sessionStorage.setItem('customPDF', resumeDataUrl)
+      sessionStorage.setItem('customResumeText', resumeExtractedText)
 
-      sessionStorage.removeItem('uploadedFileName')
       sessionStorage.removeItem('uploadATSAnalysis')
 
       router.push('/preview')
@@ -304,7 +342,10 @@ Rules:
           </div>
           <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: '-0.02em' }}>Resume Agent</span>
         </div>
-        <AuthButton />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <SettingsButton />
+          <AuthButton />
+        </div>
       </header>
 
       <main style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px' }}>
@@ -363,6 +404,22 @@ Rules:
         </div>
 
         {/* Input Methods Body */}
+        <div style={{ marginBottom: 24 }}>
+          <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+            1. Upload Resume (Required)
+          </label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              onClick={() => resumeInputRef.current?.click()}
+              style={{ padding: '10px 16px', background: '#fff', border: '1px solid var(--border)', borderRadius: 6, fontSize: 14, cursor: 'pointer', fontWeight: 600, color: 'var(--ink)' }}
+            >
+              📎 Select File
+            </button>
+            <span style={{ fontSize: 14, color: 'var(--mid)' }}>{resumeFile ? resumeFile.name : 'No file chosen (PDF, DOCX, TXT)'}</span>
+            <input type="file" ref={resumeInputRef} onChange={handleResumeUpload} accept=".pdf,.docx,.txt" style={{ display: 'none' }} />
+          </div>
+        </div>
+
         {inputMethod === 'text' ? (
           <div>
             <label style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
@@ -416,9 +473,9 @@ Rules:
                 {loading ? (
                   <>
                     <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    Generating Tailored Resume...
+                    Analyzing Resume...
                   </>
-                ) : '⚡ Tailor My Resume & Email'}
+                ) : '⚡ Analyze Resume & Generate Email'}
               </button>
             </div>
           </div>

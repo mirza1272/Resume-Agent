@@ -1,254 +1,18 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
-import { generateEmail } from '../../lib/emailTemplates'
 import AuthButton from '../../components/AuthButton'
-
-// Simple helpers to extract job title and company name from the raw job description text
-function extractJobTitle(text) {
-  // Look for a line that looks like a title (e.g., "Senior Software Engineer at Acme Corp")
-  const titleRegex = /^(?:Senior|Junior|Lead|Principal)?\s*\w[\w\s&-]+(?=\s+(?:at|@|\-)|$)/im;
-  const match = text.match(titleRegex);
-  return match ? match[0].trim() : '';
-}
-
-function extractCompanyName(text) {
-  // Try to capture text after "at" or after a dash following the title
-  const companyRegex = /(?:at|@|\-+)\s*([\w&.\-]+(?:\s[\w&.\-]+)*)/i;
-  const match = text.match(companyRegex);
-  return match ? match[1].trim() : '';
-}
-
-function extractKeyRequirements(text) {
-  // Grab up to 5 bullet‑style lines that look like requirements
-  const lines = text.split('\n').filter(l => /^\s*[-*•\d]/.test(l));
-  return lines.slice(0, 5).join(' ; ');
-}
-
-const ResumePDFViewer = dynamic(() => import('../../components/ResumePDFViewer'), { ssr: false })
-
-/**
- * Mobile-only component: renders resume data as clean inline HTML.
- * No downloads — just a scrollable, nicely formatted resume card.
- * Hidden on desktop via CSS `.mobile-pdf-note`.
- */
-function MobileResumeView({ resumeData: r }) {
-  if (!r) return null
-  const sec = (label) => (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>
-        {label}
-      </div>
-    </div>
-  )
-  return (
-    <div className="mobile-pdf-note" style={{
-      display: 'none', flexDirection: 'column',
-      background: '#fff', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '24px 18px', marginBottom: 16,
-      fontFamily: 'DM Sans, sans-serif', color: '#2d3748', lineHeight: 1.55
-    }}>
-      {/* Header */}
-      <div style={{ textAlign: 'center', paddingBottom: 14, borderBottom: '1.5px solid #e2e8f0' }}>
-        <h2 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 700, color: '#1a202c' }}>{r.name}</h2>
-        {r.title && <p style={{ margin: '0 0 6px', fontSize: 13, color: '#718096' }}>{r.title}</p>}
-        <p style={{ margin: 0, fontSize: 11, color: '#718096' }}>
-          {[r.email, r.phone, r.location].filter(Boolean).join('  ·  ')}
-        </p>
-        {(r.linkedin || r.github || r.portfolio) && (
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: '#718096' }}>
-            {[r.linkedin, r.github, r.portfolio].filter(Boolean).join('  ·  ')}
-          </p>
-        )}
-      </div>
-
-      {/* Summary */}
-      {r.summary && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 8 }}>Summary</div>
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.6, color: '#4a5568' }}>{r.summary}</p>
-        </div>
-      )}
-
-      {/* Skills */}
-      {(r.skills || []).length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 8 }}>Skills</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {(r.skills || []).map((s, i) => (
-              <span key={i} style={{ padding: '3px 10px', background: '#edf2f7', borderRadius: 12, fontSize: 11, color: '#2d3748', fontWeight: 500 }}>{s}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Experience */}
-      {(r.experience || []).length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Experience</div>
-          {(r.experience || []).map((exp, i) => (
-            <div key={i} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 4 }}>
-                <span style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{exp.title}</span>
-                <span style={{ fontSize: 11, color: '#718096' }}>{exp.dates}</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#4a5568', marginBottom: 6 }}>{exp.company}{exp.location ? ` · ${exp.location}` : ''}</div>
-              {(exp.bullets || []).map((b, bi) => (
-                <div key={bi} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
-                  <span style={{ color: '#718096', flexShrink: 0 }}>•</span>
-                  <span style={{ fontSize: 12, color: '#4a5568', lineHeight: 1.5 }}>{b}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Projects */}
-      {(r.projects || []).length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Projects</div>
-          {(r.projects || []).map((proj, i) => (
-            <div key={i} style={{ marginBottom: 14 }}>
-              <span style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{proj.title}</span>
-              {proj.subtitle && <span style={{ fontSize: 11, color: '#718096' }}> · {proj.subtitle}</span>}
-              <div style={{ marginTop: 4 }}>
-                {(proj.bullets || []).map((b, bi) => (
-                  <div key={bi} style={{ display: 'flex', gap: 6, marginBottom: 3 }}>
-                    <span style={{ color: '#718096', flexShrink: 0 }}>•</span>
-                    <span style={{ fontSize: 12, color: '#4a5568', lineHeight: 1.5 }}>{b}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Education */}
-      {(r.education || []).length > 0 && (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#4a5568', borderBottom: '1.5px solid #cbd5e0', paddingBottom: 4, marginBottom: 10 }}>Education</div>
-          {(r.education || []).map((edu, i) => (
-            <div key={i} style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#1a202c' }}>{edu.degree}</div>
-              <div style={{ fontSize: 12, color: '#4a5568' }}>{edu.school}{edu.year ? ` · ${edu.year}` : ''}{edu.location ? ` · ${edu.location}` : ''}</div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Mobile-only: renders raw extracted resume text as a clean formatted card.
- * Uses smart regex to split single-line blobs into sections and bullets.
- */
-function MobileCustomResumeView({ text }) {
-  if (!text) return null
-
-  // 1. Clean up bullets (avoid breaking dates with hyphens, only match standard bullets)
-  let formatted = text.replace(/([•*▪➤])\s+/g, '\n$1 ')
-
-  // 2. Inject newlines before known section headers (case-insensitive)
-  const knownSections = [
-    'Summary', 'Profile', 'Employment History', 'Experience', 'Work Experience',
-    'Education', 'Skills', 'Technical Skills', 'Projects', 'Certifications', 'Languages'
-  ]
-  const sectionRe = new RegExp(`^\\s*(${knownSections.join('|')})\\s*$`, 'gim')
-  formatted = formatted.replace(sectionRe, '\n\n$1\n')
-
-  const lines = formatted.split('\n').map(l => l.trim()).filter(Boolean)
-
-  const sections = []
-  let current = { heading: '__HEADER__', lines: [] }
-  sections.push(current)
-
-  for (const line of lines) {
-    const isHeader = knownSections.some(s => line.toLowerCase() === s.toLowerCase())
-    if (isHeader) {
-      current = { heading: line.toUpperCase(), lines: [] }
-      sections.push(current)
-    } else {
-      current.lines.push(line)
-    }
-  }
-
-  // Remove empty header section if any
-  const finalSections = sections.filter(s => s.heading !== '__HEADER__' || s.lines.length > 0)
-
-  return (
-    <div className="mobile-pdf-note" style={{
-      display: 'none', flexDirection: 'column',
-      background: '#fff', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '20px 16px', marginBottom: 16,
-      fontFamily: 'DM Sans, sans-serif', color: '#2d3748', lineHeight: 1.55,
-      wordBreak: 'break-word'
-    }}>
-      {finalSections.map((sec, si) => (
-        <div key={si} style={{ marginBottom: 14 }}>
-          {sec.heading === '__HEADER__' ? (
-            <div style={{ textAlign: 'center', paddingBottom: 14, borderBottom: '1.5px solid #e2e8f0', marginBottom: 14 }}>
-              {sec.lines.map((l, li) => (
-                <p key={li} style={{
-                  margin: '2px 0',
-                  fontSize: li === 0 ? 18 : 12,
-                  fontWeight: li === 0 ? 700 : 400,
-                  color: li === 0 ? '#1a202c' : '#718096'
-                }}>{l}</p>
-              ))}
-            </div>
-          ) : (
-            <>
-              <div style={{
-                fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
-                textTransform: 'uppercase', color: '#4a5568',
-                borderBottom: '1.5px solid #cbd5e0', paddingBottom: 3, marginBottom: 8,
-                marginTop: si > 0 ? 8 : 0
-              }}>{sec.heading}</div>
-              {sec.lines.map((l, li) => {
-                const isBullet = /^[-•*▪➤]/.test(l)
-                // Heuristic for sub-headings (e.g. job titles / dates)
-                const isSubHead = l.length < 80 && !isBullet && !l.endsWith('.') && li === 0
-                return (
-                  <div key={li} style={{ display: 'flex', gap: isBullet ? 6 : 0, marginBottom: isSubHead ? 4 : 3 }}>
-                    {isBullet && <span style={{ color: '#718096', flexShrink: 0 }}>•</span>}
-                    <span style={{
-                      fontSize: isSubHead ? 13 : 12,
-                      fontWeight: isSubHead ? 600 : 400,
-                      color: isSubHead ? '#1a202c' : '#4a5568',
-                      lineHeight: 1.5
-                    }}>
-                      {isBullet ? l.replace(/^[-•*▪➤]\s*/, '') : l}
-                    </span>
-                  </div>
-                )
-              })}
-            </>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
+import SettingsButton from '../../components/SettingsButton'
 
 export default function PreviewPage() {
   const router = useRouter()
   const [data, setData] = useState(null)
   const [jobDesc, setJobDesc] = useState('')
-  const [userInfo, setUserInfo] = useState(null)
-  const [activeTab, setActiveTab] = useState('resume')
+  const [customPDF, setCustomPDF] = useState(null)
+  const [uploadFileName, setUploadFileName] = useState('')
 
-  // Edit states
-  const [editMode, setEditMode] = useState(false)
-  const [editRequest, setEditRequest] = useState('')
-  const [editLoading, setEditLoading] = useState(false)
-  const [editError, setEditError] = useState('')
-
-  // Email states (fully editable)
+  // Email states
   const [recipientEmail, setRecipientEmail] = useState('')
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
@@ -257,1006 +21,240 @@ export default function PreviewPage() {
   const [sendLoading, setSendLoading] = useState(false)
   const [sendStatus, setSendStatus] = useState(null)
 
-  // Custom PDF upload
-  const [customPDF, setCustomPDF] = useState(null)
-  const fileRef = useRef(null)
-  const [uploading, setUploading] = useState(false)
-  const [customAtsAnalysis, setCustomAtsAnalysis] = useState(null)
-  const [uploadFileName, setUploadFileName] = useState('')
-  const [customResumeText, setCustomResumeText] = useState('')
-
-  // Memoize the heavy PDF rendering to prevent lag on keystroke changes
-  const pdfViewerEl = useMemo(() => {
-    if (!data?.resume) return null
-    return <ResumePDFViewer resumeData={data.resume} />
-  }, [data?.resume])
-
   useEffect(() => {
     const d = sessionStorage.getItem('agentData')
     const j = sessionStorage.getItem('jobDesc')
-    const u = sessionStorage.getItem('userInfo')
-    if (!d) { router.push('/'); return }
+    const pdfUrl = sessionStorage.getItem('customPDF')
+    const fileName = sessionStorage.getItem('uploadedFileName')
+
+    if (!d || !pdfUrl) {
+      router.push('/')
+      return
+    }
 
     const parsedData = JSON.parse(d)
     setData(parsedData)
     setJobDesc(j || '')
-    setUserInfo(u ? JSON.parse(u) : null)
+    setCustomPDF(pdfUrl)
+    setUploadFileName(fileName || 'Resume.pdf')
 
     setEmailSubject(parsedData.email?.subject || '')
     setEmailBody(parsedData.email?.body || '')
-
     if (parsedData.recipientEmail) {
       setRecipientEmail(parsedData.recipientEmail)
-    } else if (u) {
-      setRecipientEmail(JSON.parse(u).email || '')
     }
-  }, [])
+  }, [router])
 
-  // Regenerates the entire tailored resume & email from the base template
-  async function handleRegenerate() {
-    if (typeof window === 'undefined' || !window.puter) {
-      setEditError('Puter AI script is not loaded yet. Please try again.')
-      return
-    }
-    setEditLoading(true)
-    setEditError('')
-    try {
-      // 1. Fetch template from server (or merge with uploaded file if present)
-      let template
-      const uploadedEnriched = sessionStorage.getItem('uploadedEnrichedResume')
-      if (uploadedEnriched) {
-        template = JSON.parse(uploadedEnriched)
-      } else {
-        const templateRes = await fetch('/api/template')
-        if (!templateRes.ok) throw new Error('Failed to load resume template.')
-        template = await templateRes.json()
-      }
-
-      // Check for upload evaluation context
-      const uploadAnalysis = sessionStorage.getItem('uploadATSAnalysis')
-
-      // 2. Prepare prompting
-      const jobTitle = extractJobTitle(jobDesc);
-      const companyName = extractCompanyName(jobDesc);
-      const keyRequirements = extractKeyRequirements(jobDesc);
-
-      const prompt = `You are an expert resume writer and ATS optimization specialist.
-
-Given the following base resume template and job description, tailor the resume to fit the job description, calculate the ATS score, and generate a professional cover email.
-
-USER CONTEXT (MANDATORY INJECTION):
-The applicant is:
-- A Computer Science student
-- Specializing in Artificial Intelligence and Machine Learning
-- Skilled in Python, Deep Learning, and Full-Stack Development
-- Actively building real-world projects (including AI Resume Agent, CNN-based classifiers, and web applications)
-- Actively applying for internships and junior software/AI roles
-- Goal: To get AI/ML Engineer or Software Engineer internships
-- This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
-
-JOB CONTEXT (NEW):
-- Position: ${jobTitle}
-- Company: ${companyName}
-- Key requirements: ${keyRequirements}
-
-BASE RESUME:
-${JSON.stringify(template, null, 2)}
-
-${uploadAnalysis ? `PREVIOUS ATS EVALUATION OF UPLOADED RESUME (Ensure tailoring addresses missing skills and highlights strengths):
-${uploadAnalysis}
-` : ''}
-
-JOB DESCRIPTION:
-${jobDesc}
-
-Respond ONLY with a valid JSON object in this exact format:
-{
-  "atsScore": <number 0-100 based on keyword match, skills match, project relevance, and education relevance>,
-  "resume": {
-    "name": "${template.name}",
-    "title": "${template.title || 'Software Engineer'}",
-    "email": "${template.email}",
-    "phone": "${template.phone || ''}",
-    "location": "${template.location || ''}",
-    "linkedin": "${template.linkedin || ''}",
-    "github": "${template.github || ''}",
-    "portfolio": "${template.portfolio || ''}",
-    "summary": "<2-3 sentence tailored summary matching the job description>",
-    "experience": [
-      {
-        "title": "<tailored job title or template title>",
-        "company": "<company from template>",
-        "dates": "<dates from template>",
-        "location": "<location from template>",
-        "bullets": ["<tailored bullet 1>", "<tailored bullet 2>", "<tailored bullet 3>"]
-      }
-    ],
-    "education": [
-      {
-        "degree": "<degree from template>",
-        "school": "<school from template>",
-        "year": "<year from template>",
-        "location": "<location from template>"
-      }
-    ],
-    "skills": ["<selected skills from template + additional relevant skills, max 20 items>"],
-    "projects": [
-      {
-        "title": "<project title from template>",
-        "subtitle": "<project subtitle/tech stack from template>",
-        "bullets": ["<tailored achievement bullet focusing on keywords - MUST be 1-2 lines maximum, no longer>"]
-      }
-    ]
-  },
-  "skillMatch": {
-    "matched": ["<skills from template that match job keywords>"],
-    "missing": ["<key skills requested in job description that are NOT in candidate's skills list>"]
-  }
-}
-
-Rules:
-1. Wording must sound human-written, natural, and not AI-generated. Avoid exaggerated claims and preserve existing achievements.
-2. Maintain the candidate's core identity (name, email, phone, location, linkedin, github, portfolio, school, company names, dates). Do not invent new jobs or schools.
-3. Tailor the summary, skills selection, and experience/project bullets to highlight achievements and keywords that match the job description.
-4. Each project bullet/description MUST be exactly 1 to 2 lines maximum. Keep it concise.
-5. Email subject line must be under 60 characters.
-6. Email body must start with a formal greeting, follow the structure, contain the fixed regards and candidate signature exactly, and be between 80 to 180 words total.
-7. Output ONLY valid JSON. Do not write anything else. No explanation, no markdown formatting.`
-
-      const response = await window.puter.ai.chat(prompt)
-      const content = typeof response === 'string'
-        ? response
-        : response?.message?.content?.[0]?.text || response?.text || JSON.stringify(response)
-
-      let parsed
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
-        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
-      } catch {
-        throw new Error('Failed to parse AI response. Please try again.')
-      }
-
-      // Calculate fallback/verification values
-      const { calculateATS, extractMatchedSkills } = await import('../../utils/ats')
-      if (!parsed.atsScore) {
-        parsed.atsScore = calculateATS(
-          jobDesc,
-          parsed.resume?.skills?.join(', ') || '',
-          (parsed.resume?.experience?.map(e => `${e.title} ${e.company} ${e.bullets?.join(' ')}`).join(' ') || '') + ' ' +
-          (parsed.resume?.projects?.map(p => `${p.title} ${p.bullets?.join(' ')}`).join(' ') || '')
-        )
-      }
-      if (!parsed.skillMatch) {
-        parsed.skillMatch = extractMatchedSkills(jobDesc, parsed.resume?.skills?.join(', ') || '')
-      }
-
-      const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g
-      const extractedEmails = jobDesc.match(emailRegex)
-      parsed.recipientEmail = extractedEmails && extractedEmails.length > 0 ? extractedEmails[0] : ''
-
-      // ── Deterministic email engine (overrides any AI-generated email) ──
-      parsed.email = generateEmail(jobDesc)
-
-
-      // 3. Update state
-      setData(parsed)
-      setEmailSubject(parsed.email?.subject || '')
-      setEmailBody(parsed.email?.body || '')
-      if (parsed.recipientEmail) {
-        setRecipientEmail(parsed.recipientEmail)
-      }
-      sessionStorage.setItem('agentData', JSON.stringify(parsed))
-    } catch (e) {
-      setEditError(e.message || 'An error occurred during regeneration.')
-    } finally {
-      setEditLoading(false)
-    }
-  }
-
-  // Modifies current tailored details based on user feedback/input
-  async function handleEdit() {
-    if (!editRequest.trim()) return
-    if (typeof window === 'undefined' || !window.puter) {
-      setEditError('Puter AI script is not loaded yet. Please try again.')
-      return
-    }
-    setEditLoading(true)
-    setEditError('')
-    try {
-      const uploadAnalysis = sessionStorage.getItem('uploadATSAnalysis')
-
-      const prompt = `You are an expert resume writer. The user wants to edit their tailored resume and cover email based on their feedback.
-
-USER CONTEXT (MANDATORY INJECTION):
-The applicant is:
-- A Computer Science student
-- Specializing in Artificial Intelligence and Machine Learning
-- Skilled in Python, Deep Learning, and Full-Stack Development
-- Actively building real-world projects (including AI Resume Agent, CNN-based classifiers, and web applications)
-- Actively applying for internships and junior software/AI roles
-- Goal: To get AI/ML Engineer or Software Engineer internships
-This context MUST be included implicitly in every email generation task. Do NOT explicitly list this context in emails. Instead, naturally reflect it in tone and content.
-
-${uploadAnalysis ? `PREVIOUS ATS EVALUATION OF UPLOADED RESUME:
-${uploadAnalysis}
-` : ''}
-
-CURRENT RESUME DATA:
-${JSON.stringify(data.resume, null, 2)}
-
-CURRENT EMAIL:
-Subject: ${emailSubject}
-Body: ${emailBody}
-
-JOB DESCRIPTION:
-${jobDesc}
-
-USER'S EDIT REQUEST:
-${editRequest}
-
-Apply the requested changes and respond ONLY with a valid JSON object in this exact format:
-{
-  "atsScore": <number 0-100, update if the changes affect relevance>,
-  "resume": {
-    "name": "${data.resume.name}",
-    "title": "${data.resume.title || 'Software Engineer'}",
-    "email": "${data.resume.email}",
-    "phone": "${data.resume.phone || ''}",
-    "location": "${data.resume.location || ''}",
-    "linkedin": "${data.resume.linkedin || ''}",
-    "github": "${data.resume.github || ''}",
-    "portfolio": "${data.resume.portfolio || ''}",
-    "summary": "<updated tailored summary>",
-    "experience": [
-      {
-        "title": "<job title>",
-        "company": "<company>",
-        "dates": "<dates>",
-        "location": "<location>",
-        "bullets": ["<bullet1>", "<bullet2>", "<bullet3>"]
-      }
-    ],
-    "education": [
-      {
-        "degree": "<degree>",
-        "school": "<school>",
-        "year": "<year>",
-        "location": "<location>"
-      }
-    ],
-    "skills": ["<skill1>", "..."],
-    "projects": [
-      {
-        "title": "<project title>",
-        "subtitle": "<project subtitle/tech stack>",
-        "bullets": ["<bullet1>"]
-      }
-    ]
-  },
-  "email": {
-    "subject": "<Updated subject line - MAX 60 characters>",
-    "body": "<Updated professional formal cover email following this structure:
-    
-    Dear Hiring Team, (or 'Dear Hiring Manager,', or 'Dear Recruitment Team,')
-    
-    I am writing to apply for the [Tailored Position Name] position. [Brief introduction mentioning target role and background]
-    
-    [Brief paragraph explaining why the candidate is a strong fit, highlighting 1-2 key skills or experiences from the tailored resume. Keep it extremely natural, concise, and human-written. Do not use AI-like exaggeration phrases such as 'excited to apply' or 'perfect fit'.]
-    
-    Thank you for your time and consideration.
-    
-    Best Regards,
-    Haseeb ur Rahman
-    +92 303 8607925
-    Portfolio: https://mirzahaseeb.me/
-    GitHub: https://github.com/mirza1272/
-    
-    Ensure the email body is between 80 to 180 words total. Use simple, natural human language. No robotic fillers or placeholder brackets.>"
-  },
-  "skillMatch": ${JSON.stringify(data.skillMatch)}
-}
-
-Rules:
-1. Maintain the JSON structure exactly.
-2. Apply the edit request carefully. Each project description bullet must remain exactly 1-2 lines maximum.
-3. Wording must remain natural, human-written, and professional.
-4. The email body must start with a formal greeting, follow the structure, contain the fixed regards and candidate signature exactly, and be between 80 to 180 words total.
-5. Output ONLY valid JSON. No markdown, no pre-text or post-text.`
-
-      const response = await window.puter.ai.chat(prompt)
-      const content = typeof response === 'string'
-        ? response
-        : response?.message?.content?.[0]?.text || response?.text || JSON.stringify(response)
-
-      let parsed
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
-        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
-      } catch {
-        throw new Error('Failed to parse AI response. Please try again.')
-      }
-
-      setData(parsed)
-      setEmailSubject(parsed.email?.subject || '')
-      setEmailBody(parsed.email?.body || '')
-      sessionStorage.setItem('agentData', JSON.stringify(parsed))
-      setEditMode(false)
-      setEditRequest('')
-    } catch (e) {
-      setEditError(e.message || 'An error occurred during editing.')
-    } finally {
-      setEditLoading(false)
-    }
-  }
-
-  // Submits the application email
-  async function handleSend() {
-    if (!recipientEmail.trim()) {
-      setSendStatus({ success: false, message: 'Please specify a recipient email address.' })
-      return
-    }
+  async function handleSendEmail() {
     setSendLoading(true)
     setSendStatus(null)
+
     try {
       const res = await fetch('/api/send-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to: recipientEmail,
+          userName: data?.name || 'Haseeb ur Rahman',
           emailContent: {
             subject: emailSubject,
-            body: emailBody
+            body: emailBody,
           },
-          resumeData: data.resume,
-          userName: userInfo?.name || 'Applicant',
-          customPDF: customPDF, // Pass the base64 encoded uploaded custom PDF if present
+          customPDF: customPDF,
+          resumeData: data,
         }),
       })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error)
-      setSendStatus({ success: true, message: result.message })
+
+      if (!res.ok) {
+        const errData = await res.json()
+        throw new Error(errData.error || 'Failed to send email.')
+      }
+
+      setSendStatus('success')
     } catch (e) {
-      setSendStatus({ success: false, message: e.message })
+      setSendStatus('error')
     } finally {
       setSendLoading(false)
     }
   }
 
-  // PDF Text Extraction using client-side PDF.js
-  async function extractTextFromPDF(dataUrl) {
-    if (typeof window === 'undefined' || !window.pdfjsLib) {
-      throw new Error('PDF.js library is loading. Please wait and try again.')
-    }
-    const pdfjsLib = window.pdfjsLib
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js'
-
-    const loadingTask = pdfjsLib.getDocument(dataUrl)
-    const pdf = await loadingTask.promise
-    let text = ''
-
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i)
-      const content = await page.getTextContent()
-
-      // Sort items top-to-bottom, left-to-right to accurately reconstruct lines
-      const items = content.items.filter(item => item.str?.trim() || item.str === ' ')
-      items.sort((a, b) => {
-        const yDiff = b.transform[5] - a.transform[5] // PDF Y is bottom-up, so sort descending
-        if (Math.abs(yDiff) > 4) return yDiff
-        return a.transform[4] - b.transform[4] // X ascending
-      })
-
-      let lastY = -1
-      const textItems = []
-
-      for (const item of items) {
-        const currentY = item.transform[5]
-        // Start a new line if Y changes significantly
-        if (lastY !== -1 && Math.abs(currentY - lastY) > 4) {
-          textItems.push('\n')
-        } else if (lastY !== -1 && textItems.length > 0 && textItems[textItems.length - 1] !== '\n') {
-          // Add space if items are on the same line but separated horizontally
-          const lastStr = textItems[textItems.length - 1]
-          if (!lastStr.endsWith(' ') && !item.str.startsWith(' ')) {
-            textItems.push(' ')
-          }
-        }
-        textItems.push(item.str)
-        lastY = currentY
-      }
-      text += textItems.join('') + '\n\n'
-    }
-    return text
-  }
-
-  // Word DOCX Text Extraction using Mammoth.js
-  function readDocxFile(file) {
-    return new Promise((resolve, reject) => {
-      if (typeof window === 'undefined' || !window.mammoth) {
-        return reject(new Error('Mammoth.js library is loading. Please wait.'))
-      }
-      const reader = new FileReader()
-      reader.onload = (loadEvent) => {
-        const arrayBuffer = loadEvent.target.result
-        window.mammoth.extractRawText({ arrayBuffer })
-          .then(result => resolve(result.value))
-          .catch(reject)
-      }
-      reader.onerror = () => reject(new Error('Failed to read file buffer.'))
-      reader.readAsArrayBuffer(file)
-    })
-  }
-
-  // Plain Text file reader
-  function readTxtFile(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => resolve(e.target.result)
-      reader.onerror = () => reject(new Error('Failed to read text file.'))
-      reader.readAsText(file)
-    })
-  }
-
-  // Remove the custom resume upload and restore the originally tailored resume
-  function handleRemoveUpload() {
-    setCustomPDF(null)
-    setCustomAtsAnalysis(null)
-    setUploadFileName('')
-    setCustomResumeText('')
-    if (fileRef.current) fileRef.current.value = ''
-
-    // Restore original tailored data from sessionStorage
-    const d = sessionStorage.getItem('agentData')
-    if (d) {
-      setData(JSON.parse(d))
-    }
-  }
-
-  // Handles custom resume upload, parsing, and real-time ATS re-evaluation
-  async function handleFileUpload(e) {
-    const file = e.target.files[0]
-    if (!file) return
-
-    setUploading(true)
-    setEditError('')
-    setCustomAtsAnalysis(null)
-    setUploadFileName(file.name)
-
-    // Read file as data URL to preview inside the PDF viewer iframe
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setCustomPDF(ev.target.result)
-    }
-    reader.readAsDataURL(file)
-
-    try {
-      let extractedText = ''
-
-      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        const dataUrl = await new Promise((resolve, reject) => {
-          const rdr = new FileReader()
-          rdr.onload = (ev) => resolve(ev.target.result)
-          rdr.onerror = () => reject(new Error('Failed to read PDF file.'))
-          rdr.readAsDataURL(file)
-        })
-        extractedText = await extractTextFromPDF(dataUrl)
-      } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
-        extractedText = await readDocxFile(file)
-      } else if (file.type === 'text/plain' || file.name.endsWith('.txt')) {
-        extractedText = await readTxtFile(file)
-      } else {
-        throw new Error('Unsupported file format. Please upload PDF, DOCX, or TXT.')
-      }
-
-      if (!extractedText.trim()) {
-        throw new Error('Could not extract text from file.')
-      }
-
-      // Save for mobile inline preview
-      setCustomResumeText(extractedText)
-
-      if (typeof window === 'undefined' || !window.puter) {
-        throw new Error('Puter AI script is loading. Please wait a moment and try again.')
-      }
-
-      const prompt = `You are a strict ATS (Applicant Tracking System) evaluator. Your job is to give HONEST, ACCURATE scores — not to flatter the candidate.
-
-CUSTOM RESUME TEXT:
-${extractedText}
-
-TARGET JOB DESCRIPTION:
-${jobDesc}
-
-Respond ONLY with a valid JSON object in this exact format:
-{
-  "atsScore": <number 0-100. Use this STRICT rubric:
-    - Count specifically how many required tech skills, tools, languages, and frameworks from the job description are present in the resume
-    - 90-100: 90%+ of required tech skills present + directly matching role experience
-    - 75-89: 70-89% of required skills present, relevant experience
-    - 60-74: 50-69% of required skills present, partially relevant
-    - 40-59: 30-49% of skills present, indirect match
-    - Below 40: Less than 30% of required skills present
-    Do NOT give high scores based on enthusiasm or soft skills. Be strict and honest.>,
-  "summary": "<2-3 sentence honest assessment of alignment with this specific job — mention specific gaps if any>",
-  "strengths": [
-    "<specific technical strength that directly matches a job requirement — name the exact technology>",
-    "<another specific matching technical strength>"
-  ],
-  "missingSkills": [
-    "<ONLY named technologies, tools, or languages from the job description that are NOT in the resume. Must be a specific tech name, NOT a vague phrase like 'production experience'. If nothing missing, return empty array.>"
-  ],
-  "matchedSkills": [
-    "<ONLY specific technologies, frameworks, languages, or tools from the job description that are present in the resume. Max 10 items. No soft skills or generic terms.>"
-  ]
-}
-
-Rules:
-1. Be honest and strict with the ATS score — inflate nothing.
-2. Output ONLY valid JSON.`
-
-      const response = await window.puter.ai.chat(prompt)
-      const content = typeof response === 'string'
-        ? response
-        : response?.message?.content?.[0]?.text || response?.text || JSON.stringify(response)
-
-      let parsed
-      try {
-        const jsonMatch = content.match(/\{[\s\S]*\}/)
-        parsed = JSON.parse(jsonMatch ? jsonMatch[0] : content)
-      } catch {
-        throw new Error('Failed to parse ATS evaluation from AI. Please try again.')
-      }
-
-      // Update the main page data with the new score and skills matching of the custom uploaded resume
-      setData(prev => {
-        if (!prev) return prev
-        return {
-          ...prev,
-          atsScore: parsed.atsScore,
-          skillMatch: {
-            matched: parsed.matchedSkills || [],
-            missing: parsed.missingSkills || []
-          }
-        }
-      })
-
-      setCustomAtsAnalysis({
-        summary: parsed.summary,
-        strengths: parsed.strengths
-      })
-    } catch (e) {
-      setEditError(e.message || 'An error occurred during custom resume ATS evaluation.')
-      setCustomPDF(null)
-      setUploadFileName('')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  function getScoreColor(score) {
-    if (score >= 80) return '#16a34a'
-    if (score >= 60) return '#d97706'
-    return '#dc2626'
-  }
-
   if (!data) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper)' }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 40, height: 40, border: '3px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
-        <p style={{ color: 'var(--mid)', fontSize: 14 }}>Loading your results...</p>
-      </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--paper)', color: 'var(--mid)' }}>
+      Loading analysis...
     </div>
   )
 
-  const score = data.atsScore || 0
+  const atsScore = data.atsScore || 0
+  const isGoodScore = atsScore >= 70
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--paper)' }}>
-      <header className="preview-header" style={{ borderBottom: '1px solid var(--border)', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <button onClick={() => router.push('/')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mid)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}>
-            ← Back
-          </button>
-          <span style={{ color: 'var(--border)' }}>|</span>
-          <span style={{ fontWeight: 600, fontSize: 15 }}>Resume Agent</span>
-        </div>
-
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 60 }}>
+      {/* Header */}
+      <header style={{ borderBottom: '1px solid var(--border)', background: '#fff', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="ats-label" style={{ fontSize: 12, color: 'var(--mid)', fontFamily: 'DM Mono, monospace' }}>ATS</span>
-            <div style={{
-              padding: '4px 12px',
-              borderRadius: 20,
-              background: getScoreColor(score),
-              color: '#fff',
-              fontWeight: 700,
-              fontSize: 14,
-              fontFamily: 'DM Mono, monospace',
-            }}>
-              {score}/100
-            </div>
+          <button
+            onClick={() => router.push('/')}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: '50%', background: '#f1f5f9', border: 'none', cursor: 'pointer', transition: 'background 0.2s', color: 'var(--mid)' }}
+            title="Start Over"
+          >
+            ←
+          </button>
+          <div>
+            <h1 style={{ fontSize: 18, fontWeight: 600, margin: 0, color: 'var(--ink)' }}>ATS Analysis Result</h1>
+            <p style={{ margin: '2px 0 0', fontSize: 13, color: 'var(--mid)' }}>{uploadFileName}</p>
           </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <SettingsButton />
           <AuthButton />
         </div>
       </header>
 
-      <div className="preview-grid" style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', display: 'grid', gridTemplateColumns: '1fr 420px', gap: 28 }}>
-        <div>
-          <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
-            {['resume', 'email'].map(tab => (
+      <main style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+
+        {/* Left Column: ATS Analysis & Email */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+          {/* ATS Score Card */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--ink)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              📊 Overall ATS Match
+            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+              <div style={{ width: 80, height: 80, borderRadius: '50%', border: `6px solid ${isGoodScore ? '#10b981' : '#f59e0b'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column' }}>
+                <span style={{ fontSize: 24, fontWeight: 700, color: 'var(--ink)', lineHeight: 1 }}>{atsScore}</span>
+                <span style={{ fontSize: 10, color: 'var(--mid)', fontWeight: 600 }}>/100</span>
+              </div>
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: 15, fontWeight: 600, color: isGoodScore ? '#10b981' : '#f59e0b' }}>
+                  {isGoodScore ? 'Strong Match' : 'Needs Improvement'}
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--mid)', lineHeight: 1.5 }}>
+                  {isGoodScore
+                    ? 'This resume aligns well with the job requirements. Review recommendations for minor tweaks.'
+                    : 'This resume is missing key requirements for this position. See missing skills and recommendations below.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Analysis */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
+
+            {/* Strengths */}
+            {data.strengths && data.strengths.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#10b981', margin: '0 0 12px' }}>✓ Strengths</h3>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>
+                  {data.strengths.map((str, i) => <li key={i} style={{ marginBottom: 6 }}>{str}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* Recommendations */}
+            {data.recommendations && data.recommendations.length > 0 && (
+              <div style={{ marginBottom: 20 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#3b82f6', margin: '0 0 12px' }}>💡 Recommendations</h3>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, color: 'var(--ink)', lineHeight: 1.5 }}>
+                  {data.recommendations.map((rec, i) => <li key={i} style={{ marginBottom: 6 }}>{rec}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {/* Missing Skills */}
+            {data.skillMatch?.missing && data.skillMatch.missing.length > 0 && (
+              <div>
+                <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#ef4444', margin: '0 0 12px' }}>⚠️ Missing Keywords</h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {data.skillMatch.missing.map((s, i) => (
+                    <span key={i} style={{ background: '#fef2f2', color: '#b91c1c', padding: '4px 10px', borderRadius: 4, fontSize: 12, fontWeight: 500, border: '1px solid #fecaca' }}>{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Matched Skills */}
+            {data.skillMatch?.matched && data.skillMatch.matched.length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#10b981', margin: '0 0 12px' }}>✓ Matched Keywords</h3>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {data.skillMatch.matched.map((s, i) => (
+                    <span key={i} style={{ background: '#ecfdf5', color: '#047857', padding: '4px 10px', borderRadius: 4, fontSize: 12, fontWeight: 500, border: '1px solid #a7f3d0' }}>{s}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Email Preview & Send */}
+          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>✉️ Cover Email</h2>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--mid)', marginBottom: 4, display: 'block' }}>To:</label>
+                <input
+                  type="email"
+                  value={recipientEmail}
+                  onChange={e => setRecipientEmail(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 14 }}
+                  placeholder="hr@company.com"
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--mid)', marginBottom: 4, display: 'block' }}>Subject:</label>
+                <input
+                  type="text"
+                  value={emailSubject}
+                  onChange={e => setEmailSubject(e.target.value)}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 14, fontWeight: 600 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--mid)', marginBottom: 4, display: 'block' }}>Body:</label>
+                <textarea
+                  value={emailBody}
+                  onChange={e => setEmailBody(e.target.value)}
+                  rows={10}
+                  style={{ width: '100%', padding: '12px', borderRadius: 6, border: '1px solid var(--border)', fontSize: 14, fontFamily: 'DM Sans, sans-serif', resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 13 }}>
+                {sendStatus === 'success' && <span style={{ color: '#10b981', fontWeight: 500 }}>✓ Email sent successfully</span>}
+                {sendStatus === 'error' && <span style={{ color: '#ef4444', fontWeight: 500 }}>✕ Failed to send email</span>}
+              </div>
               <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
+                onClick={handleSendEmail}
+                disabled={sendLoading || !recipientEmail}
                 style={{
-                  padding: '8px 20px',
-                  border: 'none',
-                  background: 'none',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: activeTab === tab ? 600 : 400,
-                  color: activeTab === tab ? 'var(--ink)' : 'var(--mid)',
-                  borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                  marginBottom: -1,
-                  textTransform: 'capitalize',
-                  fontFamily: 'DM Sans, sans-serif',
+                  background: 'var(--accent)', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 6, fontSize: 14, fontWeight: 600, cursor: (sendLoading || !recipientEmail) ? 'not-allowed' : 'pointer', opacity: (sendLoading || !recipientEmail) ? 0.7 : 1, transition: 'background 0.2s'
                 }}
               >
-                {tab === 'resume' ? '📄 Resume' : '✉️ Email Application'}
+                {sendLoading ? 'Sending...' : 'Send Application'}
               </button>
-            ))}
+            </div>
           </div>
 
-          {activeTab === 'resume' && (
-            <div>
-              <div style={{ marginBottom: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                {!uploading && (
-                  <button
-                    onClick={() => fileRef.current?.click()}
-                    style={{ padding: '6px 14px', border: '1px solid var(--border)', background: '#fff', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: 'var(--mid)' }}
-                  >
-                    📎 Upload Custom Resume
-                  </button>
-                )}
-                {uploading && (
-                  <span style={{ fontSize: 12, color: 'var(--mid)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(0,0,0,0.1)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    Parsing & evaluating resume...
-                  </span>
-                )}
-                {(customPDF || uploadFileName) && !uploading && (
-                  <button onClick={handleRemoveUpload} style={{ padding: '6px 14px', border: '1px solid #fecaca', background: '#fef2f2', borderRadius: 5, fontSize: 12, cursor: 'pointer', color: '#dc2626' }}>
-                    ✕ Remove Custom Resume
-                  </button>
-                )}
-                <input ref={fileRef} type="file" accept=".pdf,.docx,.txt" onChange={handleFileUpload} style={{ display: 'none' }} />
-              </div>
-
-              {customPDF ? (
-                <>
-                  {/* Mobile: parse & render uploaded resume text inline */}
-                  <MobileCustomResumeView text={customResumeText} />
-                  <div className="desktop-pdf">
-                    <iframe src={customPDF} style={{ width: '100%', height: 700, border: '1px solid var(--border)', borderRadius: 8 }} />
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Mobile: render resume as clean inline HTML — no downloads */}
-                  <MobileResumeView resumeData={data?.resume} />
-                  <div className="desktop-pdf" style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
-                    {pdfViewerEl}
-                  </div>
-                </>
-              )}
-
-
-            </div>
-          )}
-
-          {activeTab === 'email' && (
-            <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 8, padding: 24 }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-                    Recipient Email
-                  </label>
-                  <input
-                    type="text"
-                    value={recipientEmail}
-                    onChange={e => setRecipientEmail(e.target.value)}
-                    placeholder="e.g. careers@company.com"
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontFamily: 'DM Sans, sans-serif',
-                      outline: 'none',
-                      color: 'var(--ink)'
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-                    Email Subject
-                  </label>
-                  <input
-                    type="text"
-                    value={emailSubject}
-                    onChange={e => setEmailSubject(e.target.value)}
-                    placeholder="e.g. Application for Software Engineer Role"
-                    maxLength={60}
-                    style={{
-                      width: '100%',
-                      padding: '10px 12px',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      fontFamily: 'DM Sans, sans-serif',
-                      outline: 'none',
-                      color: 'var(--ink)'
-                    }}
-                  />
-                  <span style={{ fontSize: 10, color: 'var(--mid)', marginTop: 4, display: 'block' }}>
-                    {emailSubject.length}/60 characters
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>
-                    Editable Email Body
-                  </label>
-                  <textarea
-                    value={emailBody}
-                    onChange={e => setEmailBody(e.target.value)}
-                    placeholder="Write your email here..."
-                    rows={12}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      border: '1px solid var(--border)',
-                      borderRadius: 6,
-                      fontSize: 13,
-                      lineHeight: 1.6,
-                      fontFamily: 'DM Sans, sans-serif',
-                      outline: 'none',
-                      resize: 'vertical',
-                      color: 'var(--ink)'
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* ATS Match Card */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
-            <h3 style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-              ATS Analysis
-            </h3>
-
-            {uploading ? (
-              <div style={{ textAlign: 'center', padding: '24px 0' }}>
-                <div style={{ width: 28, height: 28, border: '2.5px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 12px' }} />
-                <p style={{ fontSize: 13, color: 'var(--mid)', fontWeight: 500 }}>Evaluating uploaded resume...</p>
-              </div>
+        {/* Right Column: PDF Preview */}
+        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 12, padding: 24, boxShadow: '0 4px 12px rgba(0,0,0,0.02)', display: 'flex', flexDirection: 'column' }}>
+          <h2 style={{ margin: '0 0 16px', fontSize: 16, fontWeight: 600, color: 'var(--ink)' }}>📄 Uploaded Resume</h2>
+          <div style={{ flex: 1, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: '#f8fafc', minHeight: 600 }}>
+            {customPDF ? (
+              <iframe src={customPDF} style={{ width: '100%', height: '100%', border: 'none' }} title="Resume PDF Preview" />
             ) : (
-              <>
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 13, color: 'var(--mid)' }}>Keywords & Skills Match</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: getScoreColor(score) }}>{score}%</span>
-                  </div>
-                  <div style={{ height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${score}%`, background: getScoreColor(score), borderRadius: 3, transition: 'width 0.6s ease' }} />
-                  </div>
-                </div>
-
-                {data.skillMatch && (
-                  <div>
-                    <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Matched Skills</p>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {(data.skillMatch.matched || []).slice(0, 8).map((s, i) => (
-                        <span key={i} style={{ padding: '3px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, fontSize: 11, color: '#16a34a' }}>{s}</span>
-                      ))}
-                    </div>
-                    {(data.skillMatch.missing || []).length > 0 && (
-                      <>
-                        <p style={{ fontSize: 11, color: 'var(--mid)', fontFamily: 'DM Mono, monospace', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8, marginTop: 12 }}>Missing Skills</p>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {(data.skillMatch.missing || []).slice(0, 5).map((s, i) => (
-                            <span key={i} style={{ padding: '3px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, fontSize: 11, color: '#dc2626' }}>{s}</span>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {customAtsAnalysis && (
-                  <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                    <h4 style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 6 }}>Custom Evaluation</h4>
-                    <p style={{ fontSize: 12, color: 'var(--mid)', lineHeight: 1.5, marginBottom: 12 }}>{customAtsAnalysis.summary}</p>
-
-                    <h5 style={{ fontSize: 10, fontFamily: 'DM Mono, monospace', color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>Key Strengths</h5>
-                    <ul style={{ padding: 0, margin: 0, listStyle: 'none' }}>
-                      {(customAtsAnalysis.strengths || []).map((s, i) => (
-                        <li key={i} style={{ fontSize: 12, color: 'var(--ink)', marginBottom: 4, display: 'flex', gap: 4, alignItems: 'start' }}>
-                          <span style={{ color: '#16a34a', fontWeight: 'bold' }}>✓</span>
-                          <span>{s}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-
-          {/* Action Center */}
-          <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 10, padding: 20 }}>
-            <h3 style={{ fontSize: 12, fontFamily: 'DM Mono, monospace', color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 16px' }}>
-              Action Center
-            </h3>
-
-            <button
-              onClick={handleSend}
-              disabled={sendLoading || editLoading}
-              style={{
-                width: '100%',
-                padding: '11px',
-                background: sendLoading ? 'var(--mid)' : 'var(--accent)',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 7,
-                fontSize: 14,
-                fontWeight: 600,
-                cursor: (sendLoading || editLoading) ? 'not-allowed' : 'pointer',
-                marginBottom: 10,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8
-              }}
-            >
-              {sendLoading ? 'Sending Application...' : '🚀 Approve & Send'}
-            </button>
-
-            {sendStatus && (
-              <div style={{
-                padding: '10px 12px',
-                borderRadius: 6,
-                background: sendStatus.success ? '#f0fdf4' : '#fef2f2',
-                border: `1px solid ${sendStatus.success ? '#bbf7d0' : '#fecaca'}`,
-                color: sendStatus.success ? '#16a34a' : '#dc2626',
-                fontSize: 13,
-                marginBottom: 12,
-              }}>
-                {sendStatus.message}
-              </div>
-            )}
-
-            <button
-              onClick={handleRegenerate}
-              disabled={editLoading || sendLoading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: '#fff',
-                color: 'var(--ink)',
-                border: '1px solid var(--border)',
-                borderRadius: 7,
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: (editLoading || sendLoading) ? 'not-allowed' : 'pointer',
-                marginBottom: 10,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6
-              }}
-            >
-              {editLoading ? 'Processing...' : '⚡ Regenerate'}
-            </button>
-
-            <button
-              onClick={() => setEditMode(!editMode)}
-              disabled={editLoading || sendLoading}
-              style={{
-                width: '100%',
-                padding: '10px',
-                background: 'transparent',
-                color: 'var(--mid)',
-                border: '1px solid var(--border)',
-                borderRadius: 7,
-                fontSize: 13,
-                fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
-              ✏️ Request Changes
-            </button>
-
-            {editMode && (
-              <div style={{ marginTop: 12 }}>
-                <textarea
-                  value={editRequest}
-                  onChange={e => setEditRequest(e.target.value)}
-                  placeholder="Describe changes... e.g. Make the summary more concise, highlight React skills, change tone..."
-                  rows={4}
-                  style={{
-                    width: '100%',
-                    padding: '10px 12px',
-                    border: '1px solid var(--border)',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    color: 'var(--ink)',
-                    outline: 'none',
-                    resize: 'vertical',
-                    fontFamily: 'DM Sans, sans-serif',
-                    lineHeight: 1.5,
-                  }}
-                />
-                <button
-                  onClick={handleEdit}
-                  disabled={editLoading}
-                  style={{
-                    marginTop: 8,
-                    width: '100%',
-                    padding: '9px',
-                    background: editLoading ? 'var(--mid)' : 'var(--accent)',
-                    color: '#fff',
-                    border: 'none',
-                    borderRadius: 6,
-                    fontSize: 13,
-                    fontWeight: 600,
-                    cursor: editLoading ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  {editLoading ? 'Applying Changes...' : 'Apply Feedback'}
-                </button>
-              </div>
-            )}
-
-            {editError && (
-              <div style={{ marginTop: 12, padding: '8px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#dc2626', fontSize: 12 }}>
-                {editError}
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--mid)' }}>
+                No PDF to preview
               </div>
             )}
           </div>
         </div>
-      </div>
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @media (max-width: 768px) {
-          .preview-grid {
-            grid-template-columns: 1fr !important;
-            padding: 16px 12px !important;
-          }
-          .preview-header {
-            padding: 10px 14px !important;
-          }
-          .ats-label {
-            display: none !important;
-          }
-          .mobile-pdf-note {
-            display: flex !important;
-          }
-          .desktop-pdf {
-            display: none !important;
-          }
-        }
-        @media (min-width: 769px) {
-          .mobile-pdf-note { display: none !important; }
-          .desktop-pdf { display: block !important; }
-        }
-      `}</style>
+      </main>
     </div>
   )
 }

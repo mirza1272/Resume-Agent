@@ -7,7 +7,14 @@ export const runtime = 'nodejs'
 
 export async function POST(req) {
   try {
-    const { to, emailContent, resumeData, userName, customPDF } = await req.json()
+    const body = await req.json()
+    console.log("REQUEST BODY:", { ...body, customPDF: body.customPDF ? '(Base64 PDF string omitted for brevity)' : null, resumeData: body.resumeData ? '(Resume object omitted for brevity)' : null });
+    console.log("ENV CHECK:", {
+      user: process.env.GMAIL_USER,
+      passExists: !!process.env.GMAIL_PASS
+    });
+
+    const { to, emailContent, resumeData, userName, customPDF } = body
 
     if (!process.env.GMAIL_USER || !process.env.GMAIL_PASS) {
       // Provide a clearer error for production logs
@@ -63,6 +70,7 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, message: `Email sent successfully to ${to}` })
   } catch (e) {
+    console.error("EMAIL API ERROR:", e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }

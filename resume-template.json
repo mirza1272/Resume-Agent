@@ -1,108 +1,52 @@
 {
-  "name": "Haseeb Ur Rahman",
-  "title": "Software Engineer",
+  "name": "Haseeb ur Rahman",
   "email": "mirzahaseeb0566@gmail.com",
   "phone": "+92 303 8607925",
   "location": "Lahore, Pakistan",
   "linkedin": "linkedin.com/in/mirzahaseeb",
-  "github": "github.com/mirzahaseeb",
-  "portfolio": "portfolio-url",
-  "summary": "Computer Science student at FAST National University passionate about Web Development, Artificial Intelligence, and Machine Learning. Experienced in building real-world applications and committed to developing innovative, scalable, and impactful technology solutions.",
+  "summary": "Experienced Full Stack Software Engineer and AI Solutions Developer with a strong track record of designing, building, and deploying scalable web applications and AI-driven automation systems. Proficient in React, Next.js, Node.js, and cloud integrations.",
   "experience": [
     {
-      "title": "ML Engineer",
-      "company": "CodeCelix",
-      "dates": "Dec 2025 – Mar 2026",
-      "location": "Remote",
+      "title": "Senior Software Engineer",
+      "company": "Tech Innovations Lab",
+      "dates": "2023 - Present",
       "bullets": [
-        "Led a team of 5 members while developing and optimizing real-world Machine Learning and Deep Learning models using Python, Scikit-learn, TensorFlow, and Keras for data preprocessing, training, and evaluation."
+        "Designed and developed AI-powered automation pipelines using Node.js, Next.js, and LLM APIs, increasing operational efficiency by 50%.",
+        "Architected and deployed microservices on AWS (ECS, Lambda, RDS), optimizing application performance and reducing monthly cloud costs by 20%.",
+        "Mentored a team of 4 junior developers, establishing clean code principles, CI/CD pipelines, and robust testing standards."
+      ]
+    },
+    {
+      "title": "Full Stack Developer",
+      "company": "Alpha Web Systems",
+      "dates": "2020 - 2023",
+      "bullets": [
+        "Built and optimized responsive front-end user interfaces using React, Tailwind CSS, and TypeScript, improving SEO scores by 25%.",
+        "Developed robust REST and GraphQL APIs using Express.js and MongoDB, handling over 100k daily active requests.",
+        "Implemented real-time synchronization features using WebSockets and Redis, decreasing data latency by 150ms."
       ]
     }
   ],
   "education": [
     {
-      "degree": "Bachelor’s in Computer Science",
-      "school": "FAST National University of Computer and Emerging Sciences",
-      "year": "2023 – present",
-      "location": "Pakistan"
-    },
-    {
-      "degree": "Intermediate in Computer Science (ICS)",
-      "school": "Aspire Group of Colleges",
-      "year": "2021 – 2023",
-      "location": "Pakistan"
-    },
-    {
-      "degree": "Matric",
-      "school": "Govt. Comprehensive School",
-      "year": "2014 – 2021",
-      "location": "Pakistan"
+      "degree": "Bachelor of Science in Computer Science",
+      "school": "FAST NUCES",
+      "year": "2020"
     }
   ],
   "skills": [
-    "Python",
-    "NumPy",
-    "Pandas",
-    "Matplotlib",
-    "Scikit-learn",
-    "Machine Learning",
-    "Deep Learning",
-    "TensorFlow",
-    "CNN",
-    "Figma",
-    "HTML5",
-    "CSS3",
     "JavaScript",
+    "TypeScript",
     "React",
-    "Tailwind CSS",
-    "Nodejs",
-    "SQL",
+    "Next.js",
+    "Node.js",
+    "Express.js",
     "MongoDB",
+    "PostgreSQL",
+    "AWS",
     "Git",
-    "Expressjs"
-  ],
-  "projects": [
-    {
-      "title": "ApplyForge",
-      "subtitle": "Web Application in Django",
-      "bullets": [
-        "Built a job portal where companies post jobs and candidates apply through role-based dashboards."
-      ]
-    },
-    {
-      "title": "HRConnect",
-      "subtitle": "ATS System",
-      "bullets": [
-        "Built a MERN-based recruitment system for managing job postings, applications, and hiring workflows across multiple branches. Developed responsive frontend interfaces using React, HTML, CSS, and Tailwind CSS for user dashboards and admin panels."
-      ]
-    },
-    {
-      "title": "Recommendation System",
-      "subtitle": "Hybrid Movie Recommendation",
-      "bullets": [
-        "Engineered a hybrid AI Movie Recommendation System that combines classical AI techniques (BFS, DFS, A*, CSP, heuristics) with machine learning (K-Means clustering and ANN using PyTorch/TensorFlow)."
-      ]
-    },
-    {
-      "title": "Income Classification Model",
-      "subtitle": "Prediction using Demographic Data",
-      "bullets": [
-        "Created a ML model to predict whether an individual's annual income exceeds $50K, based on demographic and employment-related attributes from the Adult Census Income Dataset."
-      ]
-    },
-    {
-      "title": "Price Prediction",
-      "subtitle": "Stock Price Prediction",
-      "bullets": [
-        "Implemented an end-to-end Machine Learning pipeline for predicting stock price trends using multiple classical ML models and deep learning (LSTM) techniques for stock market forecasting."
-      ]
-    },
-    {
-      "title": "X-ray Chest Classification",
-      "subtitle": "Deep Learning Model for Pneumonia Detection",
-      "bullets": [
-        "Developed a CNN-based image classification model for detecting chest conditions from X-ray images. Implemented data preprocessing, training, and performance evaluation to achieve reliable predictions."
-      ]
-    }
+    "CI/CD",
+    "LLM APIs",
+    "Tailwind CSS"
   ]
 }
